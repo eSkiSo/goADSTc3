@@ -105,14 +105,14 @@ func (node AdsNode) WriteToNode(value string) {
 }
 
 func ShortHandler(w http.ResponseWriter, r *http.Request) {
-    // vars := mux.Vars(r)
-	// key := vars["key"]
-	// handle := getHandle(key)
-	// value := readShortFromHandle(handle)
-	// removeHandle(handle)
-	// if err := json.NewEncoder(w).Encode(value); err != nil {
-    //     panic(err)
-    // }
+    vars := mux.Vars(r)
+	key := vars["key"]
+	handle := getHandle(key)
+	value := readShortFromHandle(handle)
+	removeHandle(handle)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+        panic(err)
+    }
 }
 
 func writeShortToHandle(handle uint64, value uint16) {
