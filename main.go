@@ -23,6 +23,8 @@ import (
 	_ "encoding/json"
 	"strings"
 	_ "strconv"
+	"encoding/binary"
+	"bytes"
 )
 
 var handles map[string]AdsNode
@@ -42,36 +44,17 @@ func main() {
 	backend1Leveled := logging.AddModuleLevel(backend1)
 	logging.SetBackend(backend1Leveled)
 	
-	// router := mux.NewRouter().StrictSlash(true)
-    // router.HandleFunc("/{key}", ShortHandler)
-	
-	// sigs := make(chan os.Signal, 1)
-	// signal.Notify(sigs, os.Interrupt,syscall.SIGTERM, syscall.SIGTERM)
-	// done := make(chan bool, 1)
-	// go func() {
-	// 	sig := <- sigs 
-	// 	closeServer()
-	// 	log.Info(sig)
-	// 	done <- true
-			
-	// }()
 
-	connectToServer()
-	node := createAdsNode("Main.blargh")
-	node2 := createAdsNode("Main.test")
-	writeLongToHandle(node.handle, 14.25)
-	writeStringToHandle(node2.handle,"making sure it's good")
-	deleteHandles()
-	closeServer()
-	// log.Fatal(http.ListenAndServe(":8080", router))
-	// <-done
-	// 	log.Info("Exiting")
+	// connectToServer()
+
+	// handle := getHandle("Main.i")
+	// writeShortToHandle2(handle, 10)
+	// deleteHandles()
+	// closeServer()
+	log.Info(adsGetDllVersion())
 }
 
-type AdsNode struct {
-	handle uint64
-	typeof string
-}
+
 
 func deleteHandles() {
 	for _, element := range handles {
@@ -85,8 +68,26 @@ func writeToVariable(variableName string, value string) {
 	
 }
 
-func getTypeOfVariable(node AdsNode) string {
-	return ""
+func getTypeOfVariable(variableName string) string {
+	buffer := make([]byte, 0xFFFF)
+	cBuffer := C.CString(string(buffer))
+	defer C.free(unsafe.Pointer(cBuffer))
+	sizeOfBuffer := C.ulong(unsafe.Sizeof(buffer))
+	cVariableNmae := C.CString(variableName)
+	defer C.free(unsafe.Pointer(cVariableNmae))
+	nErr := C.AdsSyncReadWriteReq(&addr,
+		C.ADSIGRP_SYM_INFOBYNAMEEX, 
+		0, 
+		sizeOfBuffer, 
+		unsafe.Pointer(&cBuffer), 
+		C.ulong(len(variableName)+1), 
+		unsafe.Pointer(cVariableNmae))
+
+	log.Infof("getTypeOfVariable error: %d", nErr)	
+	
+	byteArray :=  C.GoBytes(unsafe.Pointer(&cBuffer), 0xFFFF)
+	getAdsSymbol(byteArray)
+	return "typeOf"
 }
 
 func createAdsNode(variableName string) AdsNode{
@@ -100,19 +101,52 @@ func createAdsNode(variableName string) AdsNode{
 	return newNode
 }
 
-func (node AdsNode) WriteToNode(value string) {
+
+
+
+
+func  getAdsSymbol(data []byte) (symbol AdsSymHandle){
+	dataBuffer := bytes.NewBuffer(data)
+ 	headerRead := AdsHeaderType{}
 	
+	binary.Read(dataBuffer, binary.LittleEndian, &headerRead)
+	// adsType := AdsSymHandle{}
+	name := make([]byte, headerRead.LenName)
+	dt := make([]byte, headerRead.LenDataType)
+	comment := make([]byte, headerRead.LenComment)
+	binary.Read(dataBuffer, binary.LittleEndian, name)
+	dataBuffer.Next(1)
+	binary.Read(dataBuffer, binary.LittleEndian, dt)
+	dataBuffer.Next(1)
+	binary.Read(dataBuffer, binary.LittleEndian, comment)
+	dataBuffer.Next(1)
+	symbol.Name = string(name)
+	symbol.DataType = string(dt)
+	symbol.Comment = string(comment)	
+	
+	return symbol
+}
+
+func (node AdsNode) WriteToNode(value string) {
+	// valueInC := C.float(value)
+	// cHandle := C.ulong(handle)
+	// nErr := C.AdsSyncWriteReq(&addr,
+	// 	C.ADSIGRP_SYM_VALBYHND,
+	// 	cHandle,
+	// 	C.sizeof_float,
+	// 	unsafe.Pointer(&valueInC))
+	// log.Infof("writeLongToHandle error: %d", nErr)		
 }
 
 func ShortHandler(w http.ResponseWriter, r *http.Request) {
-    vars := mux.Vars(r)
-	key := vars["key"]
-	handle := getHandle(key)
-	value := readShortFromHandle(handle)
-	removeHandle(handle)
-	if err := json.NewEncoder(w).Encode(value); err != nil {
-        panic(err)
-    }
+    // vars := mux.Vars(r)
+	// key := vars["key"]
+	// handle := getHandle(key)
+	// value := readShortFromHandle(handle)
+	// removeHandle(handle)
+	// if err := json.NewEncoder(w).Encode(value); err != nil {
+    //     panic(err)
+    // }
 }
 
 func writeShortToHandle(handle uint64, value uint16) {
@@ -136,6 +170,27 @@ func writeLongToHandle(handle uint64, value float32) {
 		unsafe.Pointer(&valueInC))
 	log.Infof("writeLongToHandle error: %d", nErr)	
 }
+
+func writeShortToHandle2(handle uint64, value uint16) {
+	buf := bytes.NewBuffer([]byte{})
+	binary.Write(buf,binary.LittleEndian, value )
+	writeToHandle(handle, buf.Bytes())
+}
+
+func writeToHandle(handle uint64, data []byte) {
+	valueInC := C.CString(string(data))
+	defer C.free(unsafe.Pointer(valueInC))
+	cHandle := C.ulong(handle)
+	nErr := C.AdsSyncWriteReq(&addr,
+		C.ADSIGRP_SYM_VALBYHND,
+		cHandle,
+		C.ulong(len(data)),
+		unsafe.Pointer(valueInC))
+	log.Infof("writeStringToHandle error: %d", nErr)		
+}
+
+
+
 func writeStringToHandle(handle uint64, value string) {
 	valueInC := C.CString(value)
 	defer C.free(unsafe.Pointer(valueInC))
@@ -175,17 +230,13 @@ func connectToServer() {
 func removeHandle(handle uint64) {
 	cHandle := C.ulong(handle)
 	nErr := C.AdsSyncWriteReq(&addr,
-		C.ADSIGRP_SYM_RELEASEHND,
+		ADSIGRP_SYM_RELEASEHND,
 		0,
 		C.sizeof_ulong,
 		unsafe.Pointer(&cHandle))
 	log.Infof("removeHandle error: %d\n", nErr)
 }
 
-func closeServer() {
-	C.AdsPortClose()
-	log.Infof("Closed Port")
-}
 
 func getHandle(variableName string) (returnedHandle uint64) {
 	handleFromC := C.ulong(0)
@@ -203,4 +254,23 @@ func getHandle(variableName string) (returnedHandle uint64) {
 	log.Infof("getHandle error: %d\n", nErr)
 	returnedHandle = uint64(handleFromC)
 	return
+}
+
+func adsGetDllVersion() int {
+	return int(C.AdsGetDllVersion())
+}
+
+/// opens port on local server
+/// returns port number
+func adsPortOpen() int {
+	return int(C.AdsPortOpen())
+}
+
+func adsPortClose() int {
+	return int(C.AdsPortClose())
+}
+
+func adsGetLocalAddress() (err int, address AmsAddr) {
+	address := AmsAddr{}
+	C.AdsGetLocalAddress  
 }
