@@ -1,81 +1,10 @@
 // Created by cgo -godefs - DO NOT EDIT
-// cgo.exe -godefs cdefs.go
+// cgo.exe -godefs godefs.go
 
 package main
 
-type AmsNetId struct {
-	B [6]uint8
-}
-type AmsAddr struct {
-	NetId AmsNetId
-	Port  uint16
-}
-type AdsVersion struct {
-	Version  uint8
-	Revision uint8
-	Build    uint16
-}
-type AdsNotificationAttrib struct {
-	CbLength   uint32
-	NTransMode uint32
-	NMaxDelay  uint32
-	NCycleTime uint32
-}
-type AdsNotificationHeader struct {
-	HNotification uint32
-	Pad_cgo_0     [8]byte
-	CbSampleSize  uint32
-	Data          [1]uint8
-}
-type AdsSymbolEntry struct {
-	EntryLength   uint32
-	IGroup        uint32
-	IOffs         uint32
-	Size          uint32
-	DataType      uint32
-	Flags         uint32
-	NameLength    uint16
-	TypeLength    uint16
-	CommentLength uint16
-}
-type AdsDatatypeArrayInfo struct {
-	LBound   uint32
-	Elements uint32
-}
-type AdsDatatypeEntry struct {
-	EntryLength   uint32
-	Version       uint32
-	HashValue     uint32
-	TypeHashValue uint32
-	Size          uint32
-	Offs          uint32
-	DataType      uint32
-	Flags         uint32
-	NameLength    uint16
-	TypeLength    uint16
-	CommentLength uint16
-	ArrayDim      uint16
-	SubItems      uint16
-}
-type AdsSymbolUploadInfo struct {
-	NSymbols uint32
-	NSymSize uint32
-}
-type AdsSymbolUploadInfo2 struct {
-	NSymbols        uint32
-	NSymSize        uint32
-	NDatatypes      uint32
-	NDatatypeSize   uint32
-	NMaxDynSymbols  uint32
-	NUsedDynSymbols uint32
-}
-type AdsSymbolInfoByName struct {
-	IndexGroup  uint32
-	IndexOffset uint32
-	CbLength    uint32
-}
-
 const ANYSIZE_ARRAY = 1
+
 const ADS_FIXEDNAMESIZE = 16
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -236,3 +165,95 @@ const ADSERR_CLIENT_REMOVEHASH = (0x52 + ERR_ADSERRS)     // key not found in ha
 const ADSERR_CLIENT_NOMORESYM = (0x53 + ERR_ADSERRS)      // no more symbols in cache
 const ADSERR_CLIENT_SYNCRESINVALID = (0x54 + ERR_ADSERRS) // invalid response received
 const ADSERR_CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS) // sync port is locked
+
+// type AmsNetId struct {
+// 	B [6]uint8
+// }
+
+// type AmsAddr struct {
+// 	NetId AmsNetId
+// 	Port  uint16
+// }
+
+type AdsVersion struct {
+	Version  uint8
+	Revision uint8
+	Build    uint16
+}
+
+type AdsNotificationAttrib struct {
+	CbLength   uint32
+	NTransMode uint32
+	NMaxDelay  uint32
+	NCycleTime uint32
+}
+
+type AdsNotificationHeader struct {
+	HNotification uint32
+	Timestamp     uint64
+	CbSampleSize  uint32
+	Data          [1]uint8
+}
+
+type AdsSymbolEntry struct {
+	EntryLength   uint32
+	IGroup        uint32
+	IOffs         uint32
+	Size          uint32
+	DataType      uint32
+	Flags         uint32
+	NameLength    uint16
+	TypeLength    uint16
+	CommentLength uint16
+}
+
+type ShortAdsSymbolEntry struct {
+	IGroup        uint32
+	IOffs         uint32
+	Size          uint32
+	DataType      uint32
+	NameLength    uint16
+	TypeLength    uint16
+	CommentLength uint16
+}
+
+type AdsDatatypeArrayInfo struct {
+	LBound   uint32
+	Elements uint32
+}
+
+type AdsDatatypeEntry struct {
+	EntryLength   uint32
+	Version       uint32
+	HashValue     uint32
+	TypeHashValue uint32
+	Size          uint32
+	Offs          uint32
+	DataType      uint32
+	Flags         uint32
+	NameLength    uint16
+	TypeLength    uint16
+	CommentLength uint16
+	ArrayDim      uint16
+	SubItems      uint16
+}
+
+type AdsSymbolUploadInfo struct {
+	NSymbols uint32
+	NSymSize uint32
+}
+
+type AdsSymbolUploadInfo2 struct {
+	NSymbols        uint32
+	NSymSize        uint32
+	NDatatypes      uint32
+	NDatatypeSize   uint32
+	NMaxDynSymbols  uint32
+	NUsedDynSymbols uint32
+}
+
+type AdsSymbolInfoByName struct {
+	IndexGroup  uint32
+	IndexOffset uint32
+	CbLength    uint32
+}

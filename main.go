@@ -1,276 +1,395 @@
 package main
 
-/*
-#cgo LDFLAGS: -LC:/TwinCAT/AdsApi/TcAdsDll/x64/lib -lTcAdsDll
-#include <stdbool.h>
-#include <stdlib.h>
-#include <inttypes.h>
-#define BOOL bool
-#include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsDef.h"
-#include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsAPI.h"
-*/
-import "C"
-
 import (
-	_ "encoding/binary"
-	"net/http"
-	"os"
-	_ "os/signal"
-	_ "syscall"
-	"unsafe"
-	"github.com/op/go-logging"
-	_ "github.com/gorilla/mux"
-	_ "encoding/json"
-	"strings"
-	_ "strconv"
-	"encoding/binary"
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"log"
 )
+import "unsafe"
 
-var handles map[string]AdsNode
+type ADSSymbol struct {
+	Self     *ADSSymbol
+	FullName string
+	Name     string
+	DataType string
+	Comment  string
+	Handle   uint32
 
-var (
-	addr = C.AmsAddr{}
-)
+	Group  uint32
+	Offset uint32
+	Length uint32
 
-var log = logging.MustGetLogger("test")
-var format = logging.MustStringFormatter(
-	`%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
-)
+	Value   string
+	Valid   bool
+	Changed bool
+
+	Parent *ADSSymbol
+	Childs map[string]*ADSSymbol
+}
+
+type ADSSymbolUploadDataType struct {
+	DatatypeEntry AdsDatatypeEntry
+	Name          string
+	Group         uint32
+	Offset        uint32
+	DataType      string
+	Comment       string
+
+	Childs map[string]ADSSymbolUploadDataType
+}
+
+type ADSSymbolUploadSymbol struct {
+	SymbolEntry AdsSymbolEntry
+	Name        string
+	DataType    string
+	Comment     string
+	Childs      map[string]ADSSymbolUploadDataType
+}
 
 func main() {
-	handles = make(map[string]AdsNode)
-	backend1 := logging.NewLogBackend(os.Stderr, "", 0)
-	backend1Leveled := logging.AddModuleLevel(backend1)
-	logging.SetBackend(backend1Leveled)
-	
+	version := adsGetDllVersion()
+	log.Println(version.Version, version.Revision, version.Build)
 
-	// connectToServer()
+	fmt.Println()
 
-	// handle := getHandle("Main.i")
-	// writeShortToHandle2(handle, 10)
-	// deleteHandles()
-	// closeServer()
-	log.Info(adsGetDllVersion())
-}
+	port := adsPortOpen()
+	log.Println(port)
 
+	err := adsGetLocalAddress()
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(address.addr.netId, address.addr.port)
+	address.addr.port = 851
 
+	// handle, err := getHandleByName("Main.i")
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	// log.Println("handle:", handle)
 
-func deleteHandles() {
-	for _, element := range handles {
-		removeHandle(element.handle)
-		log.Infof("removed handle", element.handle)
+	uploadInfo, err := getSymbolUploadInfo()
+	log.Println(uploadInfo.NSymSize, uploadInfo.NDatatypeSize)
+
+	UploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
+
+	// for _, value := range address.datatypes {
+	// 	showComments(value)
+	// }
+
+	UploadSymbolInfoSymbols(uploadInfo.NSymSize)
+
+	// for _, value := range address.symbols {
+	// 	showInfoComments(value)
+	// }
+
+	fmt.Println(address.symbols["MAIN.i"].FullName)
+	fmt.Println(address.symbols["MAIN.Yikes.Blargh"].FullName)
+	fmt.Println(address.symbols["MAIN.Yikes.Blargh"].Name)
+
+	// data, err := getValueByHandle(handle, size)
+	// if err != nil {
+	// 	fmt.Println(binary.LittleEndian.Uint16(data))
+	// }
+	// log.Println(err)
+
+	err = adsPortClose()
+	if err != nil {
+		log.Println(err)
 	}
 }
 
-func writeToVariable(variableName string, value string) {
-	// node := createAdsNode(variableName)
-	
-}
-
-func getTypeOfVariable(variableName string) string {
-	buffer := make([]byte, 0xFFFF)
-	cBuffer := C.CString(string(buffer))
-	defer C.free(unsafe.Pointer(cBuffer))
-	sizeOfBuffer := C.ulong(unsafe.Sizeof(buffer))
-	cVariableNmae := C.CString(variableName)
-	defer C.free(unsafe.Pointer(cVariableNmae))
-	nErr := C.AdsSyncReadWriteReq(&addr,
-		C.ADSIGRP_SYM_INFOBYNAMEEX, 
-		0, 
-		sizeOfBuffer, 
-		unsafe.Pointer(&cBuffer), 
-		C.ulong(len(variableName)+1), 
-		unsafe.Pointer(cVariableNmae))
-
-	log.Infof("getTypeOfVariable error: %d", nErr)	
-	
-	byteArray :=  C.GoBytes(unsafe.Pointer(&cBuffer), 0xFFFF)
-	getAdsSymbol(byteArray)
-	return "typeOf"
-}
-
-func createAdsNode(variableName string) AdsNode{
-	val, ok := handles[variableName]
-	if ok {
-		return val
+func showComments(info ADSSymbolUploadDataType) {
+	fmt.Println(info.Name)
+	for _, value := range info.Childs {
+		showComments(value)
 	}
-	var newNode AdsNode
-	newNode.handle = getHandle(variableName)
-	handles[variableName] = newNode
-	return newNode
 }
 
+func showInfoComments(info ADSSymbol) {
+	fmt.Println(info.Name)
+	for _, value := range info.Childs {
+		showInfoComments(*value)
+	}
 
-
-
-
-func  getAdsSymbol(data []byte) (symbol AdsSymHandle){
-	dataBuffer := bytes.NewBuffer(data)
- 	headerRead := AdsHeaderType{}
-	
-	binary.Read(dataBuffer, binary.LittleEndian, &headerRead)
-	// adsType := AdsSymHandle{}
-	name := make([]byte, headerRead.LenName)
-	dt := make([]byte, headerRead.LenDataType)
-	comment := make([]byte, headerRead.LenComment)
-	binary.Read(dataBuffer, binary.LittleEndian, name)
-	dataBuffer.Next(1)
-	binary.Read(dataBuffer, binary.LittleEndian, dt)
-	dataBuffer.Next(1)
-	binary.Read(dataBuffer, binary.LittleEndian, comment)
-	dataBuffer.Next(1)
-	symbol.Name = string(name)
-	symbol.DataType = string(dt)
-	symbol.Comment = string(comment)	
-	
-	return symbol
 }
 
-func (node AdsNode) WriteToNode(value string) {
-	// valueInC := C.float(value)
-	// cHandle := C.ulong(handle)
-	// nErr := C.AdsSyncWriteReq(&addr,
-	// 	C.ADSIGRP_SYM_VALBYHND,
-	// 	cHandle,
-	// 	C.sizeof_float,
-	// 	unsafe.Pointer(&valueInC))
-	// log.Infof("writeLongToHandle error: %d", nErr)		
-}
-
-func ShortHandler(w http.ResponseWriter, r *http.Request) {
-    // vars := mux.Vars(r)
-	// key := vars["key"]
-	// handle := getHandle(key)
-	// value := readShortFromHandle(handle)
-	// removeHandle(handle)
-	// if err := json.NewEncoder(w).Encode(value); err != nil {
-    //     panic(err)
-    // }
-}
-
-func writeShortToHandle(handle uint64, value uint16) {
-	valueInCShort := C.short(value)
-	cHandle := C.ulong(handle)
-	nErr := C.AdsSyncWriteReq(&addr,
-		C.ADSIGRP_SYM_VALBYHND,
-		cHandle,
-		C.sizeof_short,
-		unsafe.Pointer(&valueInCShort))
-	log.Infof("writeShortToHandle error: %d", nErr)
-}
-
-func writeLongToHandle(handle uint64, value float32) {
-	valueInC := C.float(value)
-	cHandle := C.ulong(handle)
-	nErr := C.AdsSyncWriteReq(&addr,
-		C.ADSIGRP_SYM_VALBYHND,
-		cHandle,
-		C.sizeof_float,
-		unsafe.Pointer(&valueInC))
-	log.Infof("writeLongToHandle error: %d", nErr)	
-}
-
-func writeShortToHandle2(handle uint64, value uint16) {
-	buf := bytes.NewBuffer([]byte{})
-	binary.Write(buf,binary.LittleEndian, value )
-	writeToHandle(handle, buf.Bytes())
-}
-
-func writeToHandle(handle uint64, data []byte) {
-	valueInC := C.CString(string(data))
-	defer C.free(unsafe.Pointer(valueInC))
-	cHandle := C.ulong(handle)
-	nErr := C.AdsSyncWriteReq(&addr,
-		C.ADSIGRP_SYM_VALBYHND,
-		cHandle,
-		C.ulong(len(data)),
-		unsafe.Pointer(valueInC))
-	log.Infof("writeStringToHandle error: %d", nErr)		
-}
-
-
-
-func writeStringToHandle(handle uint64, value string) {
-	valueInC := C.CString(value)
-	defer C.free(unsafe.Pointer(valueInC))
-	//lengthOfString := len(value)
-	cHandle := C.ulong(handle)
-	nErr := C.AdsSyncWriteReq(&addr,
-		C.ADSIGRP_SYM_VALBYHND,
-		cHandle,
-		C.ulong(len(value)+1),
-		unsafe.Pointer(valueInC))
-	log.Infof("writeStringToHandle error: %d", nErr)	
-}
-
-func readShortFromHandle(handle uint64) int16 {
-	nData := C.short(1)
-	cHandle := C.ulong(handle)
-	nErr := C.AdsSyncReadReq(&addr,
-		C.ADSIGRP_SYM_VALBYHND,
-		cHandle,
-		C.sizeof_short,
-		unsafe.Pointer(&nData))
-	log.Infof("readShortFromHandle nData: %d\n", nData)
-	log.Infof("readShortFromHandle error: %d", nErr)
-	return int16(nData)
-	
-}
-
-func connectToServer() {
-	nPort := C.AdsPortOpen()
-	nErr := C.AdsGetLocalAddress(&addr)
-
-	log.Infof("connectToServer error: %d\n", nErr)
-	log.Infof("connectToServer nport: %d\n", nPort)
-	addr.port = 851
-}
-
-func removeHandle(handle uint64) {
-	cHandle := C.ulong(handle)
-	nErr := C.AdsSyncWriteReq(&addr,
-		ADSIGRP_SYM_RELEASEHND,
-		0,
-		C.sizeof_ulong,
-		unsafe.Pointer(&cHandle))
-	log.Infof("removeHandle error: %d\n", nErr)
-}
-
-
-func getHandle(variableName string) (returnedHandle uint64) {
-	handleFromC := C.ulong(0)
-	trimmedHandle := strings.TrimSpace(variableName)
-	handleName := C.CString(trimmedHandle)
-	sizeOfName := len(trimmedHandle)
-	defer C.free(unsafe.Pointer(handleName))
-	nErr := C.AdsSyncReadWriteReq(&addr,
-		C.ADSIGRP_SYM_HNDBYNAME,
+func getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
+	data, err := adsSyncReadReq(
+		ADSIGRP_SYM_UPLOADINFO2,
 		0x0,
-		C.sizeof_ulong,
-		unsafe.Pointer(&handleFromC),
-		C.ulong(sizeOfName),
-		unsafe.Pointer(handleName))
-	log.Infof("getHandle error: %d\n", nErr)
-	returnedHandle = uint64(handleFromC)
+		uint32(unsafe.Sizeof(uploadInfo)))
+	buff := bytes.NewBuffer(data)
+	binary.Read(buff, binary.LittleEndian, &uploadInfo)
+	if err != nil {
+		err = fmt.Errorf("new error")
+	}
 	return
 }
 
-func adsGetDllVersion() int {
-	return int(C.AdsGetDllVersion())
+func UploadSymbolInfoSymbols(length uint32) {
+	res, e := adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
+	if e != nil {
+		log.Fatal(e)
+		return
+	}
+
+	if address.symbols == nil {
+		address.symbols = map[string]ADSSymbol{}
+	}
+
+	var buff = bytes.NewBuffer(res)
+
+	for buff.Len() > 0 {
+		begBuff := buff.Len()
+		result := AdsSymbolEntry{}
+		binary.Read(buff, binary.LittleEndian, &result)
+
+		name := make([]byte, result.NameLength)
+		dt := make([]byte, result.TypeLength)
+		comment := make([]byte, result.CommentLength)
+
+		binary.Read(buff, binary.LittleEndian, name)
+		buff.Next(1)
+		binary.Read(buff, binary.LittleEndian, dt)
+		buff.Next(1)
+		binary.Read(buff, binary.LittleEndian, comment)
+		buff.Next(1)
+
+		var item ADSSymbolUploadSymbol
+		item.Name = string(name)
+		item.DataType = string(dt)
+		item.Comment = string(comment)
+		item.SymbolEntry = result
+		if len(item.DataType) > 6 {
+			if item.DataType[:6] == "STRING" {
+				item.DataType = "STRING"
+			}
+		}
+		endBuff := buff.Len()
+
+		addSymbol(item)
+
+		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
+
+	}
 }
 
-/// opens port on local server
-/// returns port number
-func adsPortOpen() int {
-	return int(C.AdsPortOpen())
+func addSymbol(symbol ADSSymbolUploadSymbol) {
+	sym := ADSSymbol{}
+
+	sym.Self = &sym
+	sym.Name = symbol.Name
+	sym.FullName = symbol.Name
+	sym.DataType = symbol.DataType
+	sym.Comment = symbol.Comment
+	sym.Length = symbol.SymbolEntry.Size
+
+	sym.Group = symbol.SymbolEntry.IGroup
+	sym.Offset = symbol.SymbolEntry.IOffs
+
+	dt, ok := address.datatypes[symbol.DataType]
+	if ok {
+		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
+		sym.Childs = dt.addOffset(&sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
+	}
+
+	address.symbols[symbol.Name] = sym
+
+	return
 }
 
-func adsPortClose() int {
-	return int(C.AdsPortClose())
+func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, offset uint32) (childs map[string]*ADSSymbol) {
+	childs = map[string]*ADSSymbol{}
+
+	var path string
+
+	for key, segment := range data.Childs {
+
+		if segment.Name[0:1] != "[" {
+			path = fmt.Sprint(parent.Name, ".", segment.Name)
+		} else {
+			path = fmt.Sprint(parent.Name, segment.Name)
+		}
+
+		child := ADSSymbol{}
+		child.Self = &child
+
+		child.Name = segment.Name
+		child.FullName = path
+		child.DataType = segment.DataType
+		child.Comment = segment.Comment
+		child.Length = segment.DatatypeEntry.EntryLength
+
+		// Uppdate with area and offset
+		child.Group = group
+		child.Offset = segment.Offset + offset
+
+		child.Parent = parent
+
+		address.symbols[child.FullName] = child
+
+		// Check if subitems exist
+		dt, ok := address.datatypes[segment.DataType]
+		if ok {
+			//log.Warn("Found sub ",segment.DataType);
+			child.Childs = dt.addOffset(parent, child.Group, child.Offset)
+		}
+
+		childs[key] = &child
+	}
+
+	return
 }
 
-func adsGetLocalAddress() (err int, address AmsAddr) {
-	address := AmsAddr{}
-	C.AdsGetLocalAddress  
+func UploadSymbolInfoDataTypes(length uint32) (err error) {
+	data, errInt := adsSyncReadReq(
+		ADSIGRP_SYM_DT_UPLOAD,
+		0x0,
+		length)
+	if errInt != nil {
+		err = fmt.Errorf("error doing DT UPLOAD %v", err)
+	}
+	buff := bytes.NewBuffer(data)
+
+	if address.datatypes == nil {
+		address.datatypes = map[string]ADSSymbolUploadDataType{}
+	}
+
+	for buff.Len() > 0 {
+		header, _ := decodeSymbolUploadDataType(buff, "")
+		address.datatypes[header.Name] = header
+	}
+	return
+	//   log.Warn(hex.Dump(header));
+}
+
+func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSymbolUploadDataType, err error) {
+
+	result := AdsDatatypeEntry{}
+	header = ADSSymbolUploadDataType{}
+
+	totalSize := data.Len()
+
+	if totalSize < 48 {
+		err = fmt.Errorf(parent, " - Wrong size <48 byte")
+		fmt.Printf(hex.Dump(data.Bytes()))
+	}
+
+	binary.Read(data, binary.LittleEndian, &result)
+
+	name := make([]byte, result.NameLength)
+	dt := make([]byte, result.TypeLength)
+	comment := make([]byte, result.CommentLength)
+
+	binary.Read(data, binary.LittleEndian, name)
+	data.Next(1)
+	binary.Read(data, binary.LittleEndian, dt)
+	data.Next(1)
+	binary.Read(data, binary.LittleEndian, comment)
+	data.Next(1)
+
+	header.Name = string(name)
+	header.DataType = string(dt)
+	header.Comment = string(comment)
+
+	header.DatatypeEntry = result
+
+	if len(header.DataType) > 6 {
+		if header.DataType[:6] == "STRING" {
+			header.DataType = "STRING"
+		}
+	}
+
+	childLen := int(result.EntryLength) - (totalSize - data.Len())
+	if childLen <= 0 {
+		return
+	}
+
+	childs := make([]byte, childLen)
+	data.Read(childs)
+
+	if len(childs) == 0 {
+		return
+	}
+
+	buff := bytes.NewBuffer(childs)
+
+	if header.DatatypeEntry.ArrayDim > 0 {
+		// Childs is an array
+		var result AdsDatatypeArrayInfo
+		arrayLevels := []AdsDatatypeArrayInfo{}
+
+		for i := 0; i < int(header.DatatypeEntry.ArrayDim); i++ {
+			binary.Read(buff, binary.LittleEndian, &result)
+
+			arrayLevels = append(arrayLevels, result)
+		}
+
+		header.Childs = makeArrayChilds(arrayLevels, header.DataType, header.DatatypeEntry.Size)
+
+	} else {
+		// Childs is standard variables
+		for j := 0; j < (int)(result.SubItems); j++ {
+			if header.Childs == nil {
+				header.Childs = map[string]ADSSymbolUploadDataType{}
+			}
+
+			child, _ := decodeSymbolUploadDataType(buff, header.Name)
+			header.Childs[child.Name] = child
+		}
+	}
+
+	return
+}
+
+func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (childs map[string]ADSSymbolUploadDataType) {
+	childs = map[string]ADSSymbolUploadDataType{}
+
+	if len(levels) < 1 {
+		return
+	}
+
+	level := levels[:1][0]
+	subChilds := makeArrayChilds(levels[1:], dt, size)
+
+	var offset uint32
+
+	for i := level.LBound; i < level.LBound+level.Elements; i++ {
+		name := fmt.Sprint("[", i, "]")
+
+		child := ADSSymbolUploadDataType{}
+		child.Name = name
+		child.DataType = dt
+		child.Offset = offset
+		child.DatatypeEntry.Size = size / level.LBound
+		child.Childs = subChilds
+
+		//child.Walk("")
+
+		childs[name] = child
+		offset += size / level.LBound
+	}
+
+	return
+}
+
+func getValueByHandle(handle uint32, size int) (data []byte, err error) {
+	data, err = adsSyncReadReq(
+		ADSIGRP_SYM_VALBYHND,
+		uint32(handle),
+		uint32(size))
+
+	return data, err
+}
+
+func getHandleByName(variableName string) (handle uint32, err error) {
+	handleData, err := adsSyncReadWriteReq(
+		ADSIGRP_SYM_HNDBYNAME,
+		0x0,
+		uint32(unsafe.Sizeof(handle)),
+		[]byte(variableName))
+	return binary.LittleEndian.Uint32(handleData), err
 }
