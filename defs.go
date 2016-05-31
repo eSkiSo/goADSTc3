@@ -1,7 +1,7 @@
 // Created by cgo -godefs - DO NOT EDIT
 // cgo.exe -godefs godefs.go
 
-package main
+package ads
 
 const ANYSIZE_ARRAY = 1
 

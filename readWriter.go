@@ -1,4 +1,4 @@
-package main
+package go-native-ads
 
 import (
 	"bytes"
