@@ -1,13 +1,18 @@
 package main
 
 /*
+#cgo CFLAGS: -I .
 #cgo LDFLAGS: -LC:/TwinCAT/AdsApi/TcAdsDll/x64/lib -lTcAdsDll
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #define BOOL bool
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsDef.h"
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsAPI.h"
+
+void  Callback(AmsAddr*, AdsNotificationHeader*, unsigned long);
+
 */
 import "C"
 
@@ -17,15 +22,38 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 )
+
+type NotificationReturn struct {
+	handle    uint32
+	timestamp uint64
+	data      []byte
+}
+
+//export notificationFun
+func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
+	//fmt.Println("printed")
+	variable := address.notificationHandles[uint32(notification.hNotification)]
+	fmt.Println(variable.FullName)
+	//fmt.Println(notification.data)
+	//fmt.Println(notification.cbSampleSize)
+	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
+	//fmt.Println(cBytes)
+	variable.parse(cBytes, 0)
+
+	//fmt.Println(&notification.data)
+}
 
 type AmsAddr C.AmsAddr
 
 type Connection struct {
-	addr      C.AmsAddr
-	symbols   map[string]ADSSymbol
-	datatypes map[string]ADSSymbolUploadDataType
+	addr                C.AmsAddr
+	symbols             map[string]ADSSymbol
+	datatypes           map[string]ADSSymbolUploadDataType
+	handles             map[uint32]*ADSSymbol
+	notificationHandles map[uint32]*ADSSymbol
 }
 
 var address = Connection{}
@@ -151,4 +179,51 @@ func adsSyncReadWriteReq(group uint32, offset uint32, readLength uint32, dataToW
 		err = fmt.Errorf("Error vadsSyncReadWriteReq %v", errInt)
 	}
 	return data, err
+}
+
+const (
+	ADSTRANS_NOTRANS     = 0
+	ADSTRANS_CLIENTCYCLE = 1
+	ADSTRANS_CLIENTONCHA = 2
+	ADSTRANS_SERVERCYCLE = 3
+	ADSTRANS_SERVERONCHA = 4
+)
+
+func (node *ADSSymbol) AdsSyncAddDeviceNotificationReq(transMode int, maxDelay uint32, cycleTime uint32) {
+
+	notAttrib := AdsNotificationAttrib{}
+	notAttrib.NMaxDelay = 0
+	notAttrib.NCycleTime = uint32(time.Second / 100.0)
+	notAttrib.CbLength = node.Length
+	notAttrib.NTransMode = ADSTRANS_SERVERONCHA
+
+	if node.Handle == nil {
+		node.getHandle()
+	}
+
+	if address.notificationHandles == nil {
+		address.notificationHandles = make(map[uint32]*ADSSymbol)
+	}
+
+	var handle uint32
+
+	hNotification := C.ulong(0)
+	//f := C.Callback
+	nErrInt := int(C.AdsSyncAddDeviceNotificationReq(
+		&address.addr,
+		ADSIGRP_SYM_VALBYHND,
+		C.ulong(*node.Handle),
+		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
+		(C.PAdsNotificationFuncEx)(C.Callback),
+		C.ulong(*node.Handle),
+		&hNotification))
+
+	handle = uint32(hNotification)
+	fmt.Println("handle for notification", handle)
+	fmt.Println("error for notification", nErrInt)
+
+	address.notificationHandles[handle] = node
+	node.NotificationHandle = &handle
+	fmt.Println(nErrInt)
+	fmt.Println("done")
 }

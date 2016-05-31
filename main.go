@@ -6,16 +6,21 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"unsafe"
 )
-import "unsafe"
 
 type ADSSymbol struct {
-	Self     *ADSSymbol
-	FullName string
-	Name     string
-	DataType string
-	Comment  string
-	Handle   uint32
+	Connection         *Connection
+	Self               *ADSSymbol
+	FullName           string
+	Name               string
+	DataType           string
+	Comment            string
+	Handle             *uint32
+	NotificationHandle *uint32
 
 	Group  uint32
 	Offset uint32
@@ -32,8 +37,6 @@ type ADSSymbol struct {
 type ADSSymbolUploadDataType struct {
 	DatatypeEntry AdsDatatypeEntry
 	Name          string
-	Group         uint32
-	Offset        uint32
 	DataType      string
 	Comment       string
 
@@ -64,12 +67,6 @@ func main() {
 	log.Println(address.addr.netId, address.addr.port)
 	address.addr.port = 851
 
-	// handle, err := getHandleByName("Main.i")
-	// if err != nil {
-	// 	log.Println(err)
-	// }
-	// log.Println("handle:", handle)
-
 	uploadInfo, err := getSymbolUploadInfo()
 	log.Println(uploadInfo.NSymSize, uploadInfo.NDatatypeSize)
 
@@ -81,13 +78,34 @@ func main() {
 
 	UploadSymbolInfoSymbols(uploadInfo.NSymSize)
 
+	// handle, err := getHandleByName("Main.i")
+	// if err != nil {
+	// 	log.Println(err)
+	// }
+	// log.Println("handle:", handle)
+	// symbol := address.symbols["Main.i"]
+	// symbol.Handle = &handle
+	address.handles = map[uint32]*ADSSymbol{}
+	// address.handles[handle] = &symbol
+
+	// fmt.Println(symbol.FullName)
+	// fmt.Println(address.handles[handle].FullName)
+
 	// for _, value := range address.symbols {
 	// 	showInfoComments(value)
 	// }
+	variable := address.symbols["ALARMS.WorkingAlarms"]
+	val, err := variable.getStringValue()
 
-	fmt.Println(address.symbols["MAIN.i"].FullName)
-	fmt.Println(address.symbols["MAIN.Yikes.Blargh"].FullName)
-	fmt.Println(address.symbols["MAIN.Yikes.Blargh"].Name)
+	fmt.Println("error", err)
+	fmt.Println("value", val)
+
+	notificationVariable := address.symbols["ALARMS.WorkingAlarms"]
+	notificationVariable.AdsSyncAddDeviceNotificationReq(0, 0, 0)
+
+	//fmt.Println(address.symbols["MAIN.i"].FullName)
+	//fmt.Println(address.symbols["MAIN.Yikes.Blargh"].FullName)
+	//fmt.Println(address.symbols["MAIN.Yikes.Blargh"].Name)
 
 	// data, err := getValueByHandle(handle, size)
 	// if err != nil {
@@ -95,7 +113,37 @@ func main() {
 	// }
 	// log.Println(err)
 
-	err = adsPortClose()
+	val, err = variable.getStringValue()
+
+	fmt.Println("error", err)
+	fmt.Println("value", val)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	signal.Notify(c, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		closeEverything()
+		// sig is a ^C, handle it
+		os.Exit(1)
+	}()
+
+	for {
+
+	}
+
+}
+
+func closeEverything() {
+	for k := range address.handles {
+		err := releaseHandle(k)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println()
+		}
+	}
+	err := adsPortClose()
 	if err != nil {
 		log.Println(err)
 	}
@@ -209,7 +257,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 	for key, segment := range data.Childs {
 
 		if segment.Name[0:1] != "[" {
-			path = fmt.Sprint(parent.Name, ".", segment.Name)
+			path = fmt.Sprint(parent.FullName, ".", segment.Name)
 		} else {
 			path = fmt.Sprint(parent.Name, segment.Name)
 		}
@@ -221,11 +269,11 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		child.FullName = path
 		child.DataType = segment.DataType
 		child.Comment = segment.Comment
-		child.Length = segment.DatatypeEntry.EntryLength
+		child.Length = segment.DatatypeEntry.Size
 
 		// Uppdate with area and offset
 		child.Group = group
-		child.Offset = segment.Offset + offset
+		child.Offset = segment.DatatypeEntry.Offs
 
 		child.Parent = parent
 
@@ -235,7 +283,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		dt, ok := address.datatypes[segment.DataType]
 		if ok {
 			//log.Warn("Found sub ",segment.DataType);
-			child.Childs = dt.addOffset(parent, child.Group, child.Offset)
+			child.Childs = dt.addOffset(&child, child.Group, child.Offset)
 		}
 
 		childs[key] = &child
@@ -363,20 +411,31 @@ func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (chi
 		child := ADSSymbolUploadDataType{}
 		child.Name = name
 		child.DataType = dt
-		child.Offset = offset
-		child.DatatypeEntry.Size = size / level.LBound
+		child.DatatypeEntry.Offs = offset
+		child.DatatypeEntry.Size = size / level.Elements
 		child.Childs = subChilds
 
 		//child.Walk("")
 
 		childs[name] = child
-		offset += size / level.LBound
+		offset += size / level.Elements
 	}
 
 	return
 }
+func (node *ADSSymbol) getStringValue() (value string, err error) {
+	if node.Handle == nil {
+		node.getHandle()
+	}
+	data, err := getValueByHandle(
+		*node.Handle,
+		node.Length)
+	node.parse(data, 0)
 
-func getValueByHandle(handle uint32, size int) (data []byte, err error) {
+	return node.Value, err
+}
+
+func getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
 	data, err = adsSyncReadReq(
 		ADSIGRP_SYM_VALBYHND,
 		uint32(handle),
@@ -385,11 +444,36 @@ func getValueByHandle(handle uint32, size int) (data []byte, err error) {
 	return data, err
 }
 
-func getHandleByName(variableName string) (handle uint32, err error) {
-	handleData, err := adsSyncReadWriteReq(
-		ADSIGRP_SYM_HNDBYNAME,
+func (node *ADSSymbol) getHandle() (err error) {
+	var handle uint32
+	if node.Handle != nil {
+		handle = *node.Handle
+
+	} else {
+		handleData, _ := adsSyncReadWriteReq(
+			ADSIGRP_SYM_HNDBYNAME,
+			0x0,
+			uint32(unsafe.Sizeof(handle)),
+			[]byte(node.FullName))
+
+		handle = binary.LittleEndian.Uint32(handleData)
+		address.handles[handle] = node
+		node.Handle = &handle
+	}
+	return err
+}
+
+func releaseHandle(handle uint32) (err error) {
+	a := make([]byte, 4)
+	binary.LittleEndian.PutUint32(a, uint32(handle))
+	err = adsSyncWriteReq(
+		ADSIGRP_SYM_RELEASEHND,
 		0x0,
-		uint32(unsafe.Sizeof(handle)),
-		[]byte(variableName))
-	return binary.LittleEndian.Uint32(handleData), err
+		a)
+	if err != nil {
+		delete(address.handles, handle)
+		fmt.Println("handle deleted ", handle)
+	}
+	return
+
 }
