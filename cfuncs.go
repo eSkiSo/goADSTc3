@@ -1,4 +1,4 @@
-package main
+package ads
 
 /*
 #cgo CFLAGS: -I .
