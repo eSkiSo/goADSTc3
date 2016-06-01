@@ -33,14 +33,8 @@ func main() {
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, syscall.SIGTERM)
 
-	go func() {
-		<-c
-		address.CloseEverything()
-		// sig is a ^C, handle it
-		os.Exit(1)
-	}()
-
-	for {
-
-	}
+	<-c
+	address.CloseEverything()
+	// sig is a ^C, handle it
+	os.Exit(1)
 }
