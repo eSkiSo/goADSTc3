@@ -166,14 +166,14 @@ const ADSERR_CLIENT_NOMORESYM = (0x53 + ERR_ADSERRS)      // no more symbols in 
 const ADSERR_CLIENT_SYNCRESINVALID = (0x54 + ERR_ADSERRS) // invalid response received
 const ADSERR_CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS) // sync port is locked
 
-// type AmsNetId struct {
-// 	B [6]uint8
-// }
+type AmsNetId struct {
+	B [6]uint8
+}
 
-// type AmsAddr struct {
-// 	NetId AmsNetId
-// 	Port  uint16
-// }
+type AmsAddr struct {
+	NetId AmsNetId
+	Port  uint16
+}
 
 type AdsVersion struct {
 	Version  uint8

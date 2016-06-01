@@ -6,9 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 	"unsafe"
 )
 
@@ -52,98 +49,19 @@ type ADSSymbolUploadSymbol struct {
 }
 
 func main() {
-	version := adsGetDllVersion()
-	log.Println(version.Version, version.Revision, version.Build)
-
-	fmt.Println()
-
-	port := adsPortOpen()
-	log.Println(port)
-
-	err := adsGetLocalAddress()
-	if err != nil {
-		log.Println(err)
-	}
-	log.Println(address.addr.netId, address.addr.port)
-	address.addr.port = 851
-
-	uploadInfo, err := getSymbolUploadInfo()
-	log.Println(uploadInfo.NSymSize, uploadInfo.NDatatypeSize)
-
-	UploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
-
-	// for _, value := range address.datatypes {
-	// 	showComments(value)
-	// }
-
-	UploadSymbolInfoSymbols(uploadInfo.NSymSize)
-
-	// handle, err := getHandleByName("Main.i")
-	// if err != nil {
-	// 	log.Println(err)
-	// }
-	// log.Println("handle:", handle)
-	// symbol := address.symbols["Main.i"]
-	// symbol.Handle = &handle
-	address.handles = map[uint32]*ADSSymbol{}
-	// address.handles[handle] = &symbol
-
-	// fmt.Println(symbol.FullName)
-	// fmt.Println(address.handles[handle].FullName)
-
-	// for _, value := range address.symbols {
-	// 	showInfoComments(value)
-	// }
-	variable := address.symbols["ALARMS.WorkingAlarms"]
-	val, err := variable.getStringValue()
-
-	fmt.Println("error", err)
-	fmt.Println("value", val)
-
-	notificationVariable := address.symbols["ALARMS.WorkingAlarms"]
-	notificationVariable.AdsSyncAddDeviceNotificationReq(0, 0, 0)
-
-	//fmt.Println(address.symbols["MAIN.i"].FullName)
-	//fmt.Println(address.symbols["MAIN.Yikes.Blargh"].FullName)
-	//fmt.Println(address.symbols["MAIN.Yikes.Blargh"].Name)
-
-	// data, err := getValueByHandle(handle, size)
-	// if err != nil {
-	// 	fmt.Println(binary.LittleEndian.Uint16(data))
-	// }
-	// log.Println(err)
-
-	val, err = variable.getStringValue()
-
-	fmt.Println("error", err)
-	fmt.Println("value", val)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	signal.Notify(c, syscall.SIGTERM)
-
-	go func() {
-		<-c
-		closeEverything()
-		// sig is a ^C, handle it
-		os.Exit(1)
-	}()
-
-	for {
-
-	}
 
 }
 
-func closeEverything() {
-	for k := range address.handles {
-		err := releaseHandle(k)
+func (conn *Connection) CloseEverything() {
+	for k := range conn.handles {
+		err := conn.releaseHandle(k)
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Println()
 		}
 	}
-	err := adsPortClose()
+	err := AdsPortClose()
 	if err != nil {
 		log.Println(err)
 	}
@@ -164,8 +82,8 @@ func showInfoComments(info ADSSymbol) {
 
 }
 
-func getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
-	data, err := adsSyncReadReq(
+func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
+	data, err := conn.adsSyncReadReq(
 		ADSIGRP_SYM_UPLOADINFO2,
 		0x0,
 		uint32(unsafe.Sizeof(uploadInfo)))
@@ -177,15 +95,15 @@ func getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
 	return
 }
 
-func UploadSymbolInfoSymbols(length uint32) {
-	res, e := adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
+func (conn *Connection) UploadSymbolInfoSymbols(length uint32) {
+	res, e := conn.adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
 	if e != nil {
 		log.Fatal(e)
 		return
 	}
 
-	if address.symbols == nil {
-		address.symbols = map[string]ADSSymbol{}
+	if conn.Symbols == nil {
+		conn.Symbols = map[string]ADSSymbol{}
 	}
 
 	var buff = bytes.NewBuffer(res)
@@ -218,16 +136,17 @@ func UploadSymbolInfoSymbols(length uint32) {
 		}
 		endBuff := buff.Len()
 
-		addSymbol(item)
+		conn.addSymbol(item)
 
 		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
 
 	}
 }
 
-func addSymbol(symbol ADSSymbolUploadSymbol) {
+func (conn *Connection) addSymbol(symbol ADSSymbolUploadSymbol) {
 	sym := ADSSymbol{}
 
+	sym.Connection = conn
 	sym.Self = &sym
 	sym.Name = symbol.Name
 	sym.FullName = symbol.Name
@@ -238,13 +157,13 @@ func addSymbol(symbol ADSSymbolUploadSymbol) {
 	sym.Group = symbol.SymbolEntry.IGroup
 	sym.Offset = symbol.SymbolEntry.IOffs
 
-	dt, ok := address.datatypes[symbol.DataType]
+	dt, ok := conn.datatypes[symbol.DataType]
 	if ok {
 		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 		sym.Childs = dt.addOffset(&sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 	}
 
-	address.symbols[symbol.Name] = sym
+	conn.Symbols[symbol.Name] = sym
 
 	return
 }
@@ -264,6 +183,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 
 		child := ADSSymbol{}
 		child.Self = &child
+		child.Connection = parent.Connection
 
 		child.Name = segment.Name
 		child.FullName = path
@@ -277,10 +197,10 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 
 		child.Parent = parent
 
-		address.symbols[child.FullName] = child
+		parent.Connection.Symbols[child.FullName] = child
 
 		// Check if subitems exist
-		dt, ok := address.datatypes[segment.DataType]
+		dt, ok := parent.Connection.datatypes[segment.DataType]
 		if ok {
 			//log.Warn("Found sub ",segment.DataType);
 			child.Childs = dt.addOffset(&child, child.Group, child.Offset)
@@ -292,8 +212,8 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 	return
 }
 
-func UploadSymbolInfoDataTypes(length uint32) (err error) {
-	data, errInt := adsSyncReadReq(
+func (conn *Connection) UploadSymbolInfoDataTypes(length uint32) (err error) {
+	data, errInt := conn.adsSyncReadReq(
 		ADSIGRP_SYM_DT_UPLOAD,
 		0x0,
 		length)
@@ -302,13 +222,13 @@ func UploadSymbolInfoDataTypes(length uint32) (err error) {
 	}
 	buff := bytes.NewBuffer(data)
 
-	if address.datatypes == nil {
-		address.datatypes = map[string]ADSSymbolUploadDataType{}
+	if conn.datatypes == nil {
+		conn.datatypes = map[string]ADSSymbolUploadDataType{}
 	}
 
 	for buff.Len() > 0 {
 		header, _ := decodeSymbolUploadDataType(buff, "")
-		address.datatypes[header.Name] = header
+		conn.datatypes[header.Name] = header
 	}
 	return
 	//   log.Warn(hex.Dump(header));
@@ -423,11 +343,11 @@ func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (chi
 
 	return
 }
-func (node *ADSSymbol) getStringValue() (value string, err error) {
+func (node *ADSSymbol) GetStringValue() (value string, err error) {
 	if node.Handle == nil {
 		node.getHandle()
 	}
-	data, err := getValueByHandle(
+	data, err := node.Connection.getValueByHandle(
 		*node.Handle,
 		node.Length)
 	node.parse(data, 0)
@@ -435,8 +355,8 @@ func (node *ADSSymbol) getStringValue() (value string, err error) {
 	return node.Value, err
 }
 
-func getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
-	data, err = adsSyncReadReq(
+func (conn *Connection) getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
+	data, err = conn.adsSyncReadReq(
 		ADSIGRP_SYM_VALBYHND,
 		uint32(handle),
 		uint32(size))
@@ -450,28 +370,28 @@ func (node *ADSSymbol) getHandle() (err error) {
 		handle = *node.Handle
 
 	} else {
-		handleData, _ := adsSyncReadWriteReq(
+		handleData, _ := node.Connection.adsSyncReadWriteReq(
 			ADSIGRP_SYM_HNDBYNAME,
 			0x0,
 			uint32(unsafe.Sizeof(handle)),
 			[]byte(node.FullName))
 
 		handle = binary.LittleEndian.Uint32(handleData)
-		address.handles[handle] = node
+		node.Connection.handles[handle] = node
 		node.Handle = &handle
 	}
 	return err
 }
 
-func releaseHandle(handle uint32) (err error) {
+func (conn *Connection) releaseHandle(handle uint32) (err error) {
 	a := make([]byte, 4)
 	binary.LittleEndian.PutUint32(a, uint32(handle))
-	err = adsSyncWriteReq(
+	err = conn.adsSyncWriteReq(
 		ADSIGRP_SYM_RELEASEHND,
 		0x0,
 		a)
 	if err != nil {
-		delete(address.handles, handle)
+		delete(conn.handles, handle)
 		fmt.Println("handle deleted ", handle)
 	}
 	return
