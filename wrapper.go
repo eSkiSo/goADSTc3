@@ -17,24 +17,14 @@ void  Callback(AmsAddr*, AdsNotificationHeader*, unsigned long);
 import "C"
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 	"unsafe"
 )
 
 var connections []*Connection
-
-type Connection struct {
-	addr                C.AmsAddr
-	Symbols             map[string]ADSSymbol
-	datatypes           map[string]ADSSymbolUploadDataType
-	handles             map[uint32]*ADSSymbol
-	notificationHandles map[uint32]*ADSSymbol
-}
 
 type NotificationReturn struct {
 	handle    uint32
@@ -42,9 +32,9 @@ type NotificationReturn struct {
 	data      []byte
 }
 
-func getConnectionFromAddress(addr *C.AmsAddr) (conn *Connection) {
+func getConnectionFromAddress(addr AmsAddr) (conn *Connection) {
 	for _, value := range connections {
-		if value.addr == *addr {
+		if *value.addr == addr {
 			conn = value
 			return
 		}
@@ -52,52 +42,33 @@ func getConnectionFromAddress(addr *C.AmsAddr) (conn *Connection) {
 	return
 }
 
-func AddLocalConnection() (conn *Connection) {
-	localConnection := Connection{}
-	localConnection.AdsGetLocalAddress()
-	localConnection.addr.port = 851
-	localConnection.Symbols = map[string]ADSSymbol{}
-	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
-
-	localConnection.handles = map[uint32]*ADSSymbol{}
-	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
-
-	uploadInfo, _ := localConnection.getSymbolUploadInfo()
-	localConnection.UploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
-	localConnection.UploadSymbolInfoSymbols(uploadInfo.NSymSize)
-
-	connections = append(connections, &localConnection)
-	conn = &localConnection
-	return
-}
-
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
-	connection := getConnectionFromAddress(addr)
+	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
+	connection := getConnectionFromAddress(*goAmsAddr)
 	variable := connection.notificationHandles[uint32(notification.hNotification)]
-	fmt.Println(variable.FullName)
+	// fmt.Println(variable.FullName)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
 	variable.parse(cBytes, 0)
+	for _, callback := range variable.ChangedHandlers {
+		callback(*variable)
+	}
 }
 
 func AdsGetDllVersion() (version AdsVersion) {
 	cAdsVersion := C.AdsGetDllVersion()
-	b := make([]byte, 4)
 	version = *(*AdsVersion)(unsafe.Pointer(&cAdsVersion))
-	binary.LittleEndian.PutUint32(b, uint32(cAdsVersion))
-	buff := bytes.NewBuffer(b)
-	binary.Read(buff, binary.LittleEndian, &version)
 	return
 }
 
 /// opens port on local server
 /// returns port number
-func AdsPortOpen() (port int) {
+func adsPortOpen() (port int) {
 	port = int(C.AdsPortOpen())
 	return
 }
 
-func AdsPortClose() (err error) {
+func adsPortClose() (err error) {
 	errInt := C.AdsPortClose()
 	if errInt != 0 {
 		err = fmt.Errorf(string(errInt))
@@ -105,8 +76,8 @@ func AdsPortClose() (err error) {
 	return
 }
 
-func (conn *Connection) AdsGetLocalAddress() (err error) {
-	errInt := C.AdsGetLocalAddress(&conn.addr)
+func (conn *Connection) adsGetLocalAddress() (err error) {
+	errInt := C.AdsGetLocalAddress((*C.AmsAddr)(unsafe.Pointer(conn.addr)))
 	if errInt != 0 {
 		err = fmt.Errorf("error %v", errInt)
 	}
@@ -122,19 +93,19 @@ func (conn *Connection) setRemoteAddress(amsId string) {
 	byte4, _ := strconv.Atoi(stringBytes[4])
 	byte5, _ := strconv.Atoi(stringBytes[5])
 
-	conn.addr.netId.b[0] = C.uchar(byte0)
-	conn.addr.netId.b[1] = C.uchar(byte1)
-	conn.addr.netId.b[2] = C.uchar(byte2)
-	conn.addr.netId.b[3] = C.uchar(byte3)
-	conn.addr.netId.b[4] = C.uchar(byte4)
-	conn.addr.netId.b[5] = C.uchar(byte5)
+	conn.addr.NetId.B[0] = uint8(byte0)
+	conn.addr.NetId.B[1] = uint8(byte1)
+	conn.addr.NetId.B[2] = uint8(byte2)
+	conn.addr.NetId.B[3] = uint8(byte3)
+	conn.addr.NetId.B[4] = uint8(byte4)
+	conn.addr.NetId.B[5] = uint8(byte5)
 }
 
 func (conn *Connection) adsSyncWriteReq(group uint32, offset uint32, data []byte) (err error) {
 	cDataToWrite := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToWrite))
 	errInt := int(C.AdsSyncWriteReq(
-		&conn.addr,
+		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
 		C.ulong(offset),
 		C.ulong(len(data)),
@@ -151,7 +122,7 @@ func (conn *Connection) adsSyncReadReq(group uint32, offset uint32, length uint3
 	defer C.free(unsafe.Pointer(cDataToRead))
 
 	errInt := int(C.AdsSyncReadReq(
-		&conn.addr,
+		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
 		C.ulong(offset),
 		C.ulong(length),
@@ -168,7 +139,7 @@ func (conn *Connection) adsSyncReadReqEx(group uint32, offset uint32, length uin
 	cData := C.CString(string(make([]byte, length)))
 	defer C.free(unsafe.Pointer(cData))
 	errInt := int(C.AdsSyncReadReqEx(
-		&conn.addr,
+		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
 		C.ulong(offset),
 		C.ulong(len(data)),
@@ -201,7 +172,7 @@ func (conn *Connection) adsSyncReadWriteReq(group uint32, offset uint32, readLen
 	defer C.free(unsafe.Pointer(cDataToWrite))
 
 	errInt := int(C.AdsSyncReadWriteReq(
-		&conn.addr,
+		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
 		C.ulong(offset),
 		C.ulong(readLength),
@@ -223,13 +194,13 @@ const (
 	ADSTRANS_SERVERONCHA = 4
 )
 
-func (node *ADSSymbol) AdsSyncAddDeviceNotificationReq(transMode int, maxDelay uint32, cycleTime uint32) {
+func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDelay uint32, cycleTime uint32) {
 
 	notAttrib := AdsNotificationAttrib{}
-	notAttrib.NMaxDelay = 0
-	notAttrib.NCycleTime = uint32(time.Second / 100.0)
+	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
+	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
 	notAttrib.CbLength = node.Length
-	notAttrib.NTransMode = ADSTRANS_SERVERONCHA
+	notAttrib.NTransMode = uint32(transMode)
 
 	if node.Handle == nil {
 		node.getHandle()
@@ -244,7 +215,7 @@ func (node *ADSSymbol) AdsSyncAddDeviceNotificationReq(transMode int, maxDelay u
 	hNotification := C.ulong(0)
 	//f := C.Callback
 	nErrInt := int(C.AdsSyncAddDeviceNotificationReq(
-		&node.Connection.addr,
+		(*C.AmsAddr)(unsafe.Pointer(node.Connection.addr)),
 		ADSIGRP_SYM_VALBYHND,
 		C.ulong(*node.Handle),
 		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
@@ -260,4 +231,77 @@ func (node *ADSSymbol) AdsSyncAddDeviceNotificationReq(transMode int, maxDelay u
 	node.NotificationHandle = &handle
 	fmt.Println(nErrInt)
 	fmt.Println("done")
+}
+
+func (conn *Connection) adsSyncDelDeviceNotificationReq(handle uint32) (err error) {
+	nErrInt := int(C.AdsSyncDelDeviceNotificationReq(
+		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
+		C.ulong(handle)))
+
+	if nErrInt != 0 {
+		err = fmt.Errorf("Del Notification Error %d", nErrInt)
+	}
+	return
+}
+
+func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
+	if node.ChangedHandlers == nil {
+		node.ChangedHandlers = make([]func(ADSSymbol), 1)
+		node.ChangedHandlers[0] = function
+		return
+	}
+	node.ChangedHandlers = append(node.ChangedHandlers, function)
+}
+
+func (node *ADSSymbol) getHandle() (err error) {
+	var handle uint32
+	if node.Handle != nil {
+		handle = *node.Handle
+
+	} else {
+		handleData, _ := node.Connection.adsSyncReadWriteReq(
+			ADSIGRP_SYM_HNDBYNAME,
+			0x0,
+			uint32(unsafe.Sizeof(handle)),
+			[]byte(node.FullName))
+
+		handle = binary.LittleEndian.Uint32(handleData)
+		node.Connection.handles[handle] = node
+		node.Handle = &handle
+	}
+	return err
+}
+
+func (conn *Connection) getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
+	data, err = conn.adsSyncReadReq(
+		ADSIGRP_SYM_VALBYHND,
+		uint32(handle),
+		uint32(size))
+
+	return data, err
+}
+
+func (conn *Connection) releaseHandle(handle uint32) (err error) {
+	a := make([]byte, 4)
+	binary.LittleEndian.PutUint32(a, uint32(handle))
+	err = conn.adsSyncWriteReq(
+		ADSIGRP_SYM_RELEASEHND,
+		0x0,
+		a)
+	if err != nil {
+		delete(conn.handles, handle)
+		fmt.Println("handle deleted ", handle)
+	}
+	return
+
+}
+
+func (conn *Connection) releasNotificationeHandle(handle uint32) (err error) {
+	conn.adsSyncDelDeviceNotificationReq(handle)
+	if err != nil {
+		delete(conn.notificationHandles, handle)
+		fmt.Println("notification handle deleted ", handle)
+	}
+	return
+
 }

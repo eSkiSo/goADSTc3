@@ -144,14 +144,22 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 		if strcmp(dt.Value, newValue) != 0 {
 			dt.Value = newValue
 			dt.Changed = dt.Valid
-			fmt.Println(dt.FullName, dt.Value)
+			dt.updateChanged(dt.Changed)
+			//fmt.Println(dt.FullName, dt.Value)
 		}
 
 		dt.Valid = true
 	}
 }
 
-func (symbol *ADSSymbol) Write(value string, offset int) (err error) { /*{{{*/
+func (node *ADSSymbol) updateChanged(value bool) {
+	node.Changed = value
+	if node.Parent != nil {
+		node.Parent.updateChanged(value)
+	}
+}
+
+func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) { /*{{{*/
 	// log.Warn("Write (", symbol.Area, ":", symbol.Offset, "): ", symbol.Name)
 
 	if len(symbol.Childs) != 0 {

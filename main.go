@@ -1,13 +1,19 @@
 package ads
 
 import (
-	"bytes"
-	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"log"
-	"unsafe"
 )
+
+var portOpen bool
+
+type Connection struct {
+	addr                *AmsAddr
+	Symbols             map[string]ADSSymbol
+	datatypes           map[string]ADSSymbolUploadDataType
+	handles             map[uint32]*ADSSymbol
+	notificationHandles map[uint32]*ADSSymbol
+}
 
 type ADSSymbol struct {
 	Connection         *Connection
@@ -18,6 +24,7 @@ type ADSSymbol struct {
 	Comment            string
 	Handle             *uint32
 	NotificationHandle *uint32
+	ChangedHandlers    []func(ADSSymbol)
 
 	Group  uint32
 	Offset uint32
@@ -31,39 +38,60 @@ type ADSSymbol struct {
 	Childs map[string]*ADSSymbol
 }
 
-type ADSSymbolUploadDataType struct {
-	DatatypeEntry AdsDatatypeEntry
-	Name          string
-	DataType      string
-	Comment       string
-
-	Childs map[string]ADSSymbolUploadDataType
-}
-
-type ADSSymbolUploadSymbol struct {
-	SymbolEntry AdsSymbolEntry
-	Name        string
-	DataType    string
-	Comment     string
-	Childs      map[string]ADSSymbolUploadDataType
-}
-
 func main() {
 
 }
 
-func (conn *Connection) CloseEverything() {
+func AddLocalConnection() (conn *Connection) {
+	if !portOpen {
+		adsPortOpen()
+		portOpen = true
+	}
+	localConnection := Connection{}
+	localConnection.addr = &AmsAddr{}
+	localConnection.adsGetLocalAddress()
+	localConnection.addr.Port = 851
+	localConnection.Symbols = map[string]ADSSymbol{}
+	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
+
+	localConnection.handles = map[uint32]*ADSSymbol{}
+	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
+
+	uploadInfo, _ := localConnection.getSymbolUploadInfo()
+	localConnection.uploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
+	localConnection.uploadSymbolInfoSymbols(uploadInfo.NSymSize)
+
+	connections = append(connections, &localConnection)
+	conn = &localConnection
+	return
+}
+
+func CloseAllConnections() {
+	for _, conn := range connections {
+		conn.CloseConnection()
+	}
+	err := adsPortClose()
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func (conn *Connection) CloseConnection() {
 	for k := range conn.handles {
 		err := conn.releaseHandle(k)
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Println()
+			fmt.Printf("deleted handle %d", k)
 		}
 	}
-	err := AdsPortClose()
-	if err != nil {
-		log.Println(err)
+	for k := range conn.notificationHandles {
+		err := conn.releasNotificationeHandle(k)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("deleted notification handle %d", k)
+		}
 	}
 }
 
@@ -82,267 +110,11 @@ func showInfoComments(info ADSSymbol) {
 
 }
 
-func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
-	data, err := conn.adsSyncReadReq(
-		ADSIGRP_SYM_UPLOADINFO2,
-		0x0,
-		uint32(unsafe.Sizeof(uploadInfo)))
-	buff := bytes.NewBuffer(data)
-	binary.Read(buff, binary.LittleEndian, &uploadInfo)
-	if err != nil {
-		err = fmt.Errorf("new error")
-	}
-	return
+func (node *ADSSymbol) AddNotification(mode uint32, cycleTime uint32, maxTime uint32, callback func(ADSSymbol)) {
+	node.adsSyncAddDeviceNotificationReq(mode, maxTime, cycleTime)
+	node.addCallback(callback)
 }
 
-func (conn *Connection) UploadSymbolInfoSymbols(length uint32) {
-	res, e := conn.adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
-	if e != nil {
-		log.Fatal(e)
-		return
-	}
-
-	if conn.Symbols == nil {
-		conn.Symbols = map[string]ADSSymbol{}
-	}
-
-	var buff = bytes.NewBuffer(res)
-
-	for buff.Len() > 0 {
-		begBuff := buff.Len()
-		result := AdsSymbolEntry{}
-		binary.Read(buff, binary.LittleEndian, &result)
-
-		name := make([]byte, result.NameLength)
-		dt := make([]byte, result.TypeLength)
-		comment := make([]byte, result.CommentLength)
-
-		binary.Read(buff, binary.LittleEndian, name)
-		buff.Next(1)
-		binary.Read(buff, binary.LittleEndian, dt)
-		buff.Next(1)
-		binary.Read(buff, binary.LittleEndian, comment)
-		buff.Next(1)
-
-		var item ADSSymbolUploadSymbol
-		item.Name = string(name)
-		item.DataType = string(dt)
-		item.Comment = string(comment)
-		item.SymbolEntry = result
-		if len(item.DataType) > 6 {
-			if item.DataType[:6] == "STRING" {
-				item.DataType = "STRING"
-			}
-		}
-		endBuff := buff.Len()
-
-		conn.addSymbol(item)
-
-		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
-
-	}
-}
-
-func (conn *Connection) addSymbol(symbol ADSSymbolUploadSymbol) {
-	sym := ADSSymbol{}
-
-	sym.Connection = conn
-	sym.Self = &sym
-	sym.Name = symbol.Name
-	sym.FullName = symbol.Name
-	sym.DataType = symbol.DataType
-	sym.Comment = symbol.Comment
-	sym.Length = symbol.SymbolEntry.Size
-
-	sym.Group = symbol.SymbolEntry.IGroup
-	sym.Offset = symbol.SymbolEntry.IOffs
-
-	dt, ok := conn.datatypes[symbol.DataType]
-	if ok {
-		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
-		sym.Childs = dt.addOffset(&sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
-	}
-
-	conn.Symbols[symbol.Name] = sym
-
-	return
-}
-
-func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, offset uint32) (childs map[string]*ADSSymbol) {
-	childs = map[string]*ADSSymbol{}
-
-	var path string
-
-	for key, segment := range data.Childs {
-
-		if segment.Name[0:1] != "[" {
-			path = fmt.Sprint(parent.FullName, ".", segment.Name)
-		} else {
-			path = fmt.Sprint(parent.Name, segment.Name)
-		}
-
-		child := ADSSymbol{}
-		child.Self = &child
-		child.Connection = parent.Connection
-
-		child.Name = segment.Name
-		child.FullName = path
-		child.DataType = segment.DataType
-		child.Comment = segment.Comment
-		child.Length = segment.DatatypeEntry.Size
-
-		// Uppdate with area and offset
-		child.Group = group
-		child.Offset = segment.DatatypeEntry.Offs
-
-		child.Parent = parent
-
-		parent.Connection.Symbols[child.FullName] = child
-
-		// Check if subitems exist
-		dt, ok := parent.Connection.datatypes[segment.DataType]
-		if ok {
-			//log.Warn("Found sub ",segment.DataType);
-			child.Childs = dt.addOffset(&child, child.Group, child.Offset)
-		}
-
-		childs[key] = &child
-	}
-
-	return
-}
-
-func (conn *Connection) UploadSymbolInfoDataTypes(length uint32) (err error) {
-	data, errInt := conn.adsSyncReadReq(
-		ADSIGRP_SYM_DT_UPLOAD,
-		0x0,
-		length)
-	if errInt != nil {
-		err = fmt.Errorf("error doing DT UPLOAD %v", err)
-	}
-	buff := bytes.NewBuffer(data)
-
-	if conn.datatypes == nil {
-		conn.datatypes = map[string]ADSSymbolUploadDataType{}
-	}
-
-	for buff.Len() > 0 {
-		header, _ := decodeSymbolUploadDataType(buff, "")
-		conn.datatypes[header.Name] = header
-	}
-	return
-	//   log.Warn(hex.Dump(header));
-}
-
-func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSymbolUploadDataType, err error) {
-
-	result := AdsDatatypeEntry{}
-	header = ADSSymbolUploadDataType{}
-
-	totalSize := data.Len()
-
-	if totalSize < 48 {
-		err = fmt.Errorf(parent, " - Wrong size <48 byte")
-		fmt.Printf(hex.Dump(data.Bytes()))
-	}
-
-	binary.Read(data, binary.LittleEndian, &result)
-
-	name := make([]byte, result.NameLength)
-	dt := make([]byte, result.TypeLength)
-	comment := make([]byte, result.CommentLength)
-
-	binary.Read(data, binary.LittleEndian, name)
-	data.Next(1)
-	binary.Read(data, binary.LittleEndian, dt)
-	data.Next(1)
-	binary.Read(data, binary.LittleEndian, comment)
-	data.Next(1)
-
-	header.Name = string(name)
-	header.DataType = string(dt)
-	header.Comment = string(comment)
-
-	header.DatatypeEntry = result
-
-	if len(header.DataType) > 6 {
-		if header.DataType[:6] == "STRING" {
-			header.DataType = "STRING"
-		}
-	}
-
-	childLen := int(result.EntryLength) - (totalSize - data.Len())
-	if childLen <= 0 {
-		return
-	}
-
-	childs := make([]byte, childLen)
-	data.Read(childs)
-
-	if len(childs) == 0 {
-		return
-	}
-
-	buff := bytes.NewBuffer(childs)
-
-	if header.DatatypeEntry.ArrayDim > 0 {
-		// Childs is an array
-		var result AdsDatatypeArrayInfo
-		arrayLevels := []AdsDatatypeArrayInfo{}
-
-		for i := 0; i < int(header.DatatypeEntry.ArrayDim); i++ {
-			binary.Read(buff, binary.LittleEndian, &result)
-
-			arrayLevels = append(arrayLevels, result)
-		}
-
-		header.Childs = makeArrayChilds(arrayLevels, header.DataType, header.DatatypeEntry.Size)
-
-	} else {
-		// Childs is standard variables
-		for j := 0; j < (int)(result.SubItems); j++ {
-			if header.Childs == nil {
-				header.Childs = map[string]ADSSymbolUploadDataType{}
-			}
-
-			child, _ := decodeSymbolUploadDataType(buff, header.Name)
-			header.Childs[child.Name] = child
-		}
-	}
-
-	return
-}
-
-func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (childs map[string]ADSSymbolUploadDataType) {
-	childs = map[string]ADSSymbolUploadDataType{}
-
-	if len(levels) < 1 {
-		return
-	}
-
-	level := levels[:1][0]
-	subChilds := makeArrayChilds(levels[1:], dt, size)
-
-	var offset uint32
-
-	for i := level.LBound; i < level.LBound+level.Elements; i++ {
-		name := fmt.Sprint("[", i, "]")
-
-		child := ADSSymbolUploadDataType{}
-		child.Name = name
-		child.DataType = dt
-		child.DatatypeEntry.Offs = offset
-		child.DatatypeEntry.Size = size / level.Elements
-		child.Childs = subChilds
-
-		//child.Walk("")
-
-		childs[name] = child
-		offset += size / level.Elements
-	}
-
-	return
-}
 func (node *ADSSymbol) GetStringValue() (value string, err error) {
 	if node.Handle == nil {
 		node.getHandle()
@@ -355,45 +127,51 @@ func (node *ADSSymbol) GetStringValue() (value string, err error) {
 	return node.Value, err
 }
 
-func (conn *Connection) getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
-	data, err = conn.adsSyncReadReq(
-		ADSIGRP_SYM_VALBYHND,
-		uint32(handle),
-		uint32(size))
-
-	return data, err
-}
-
-func (node *ADSSymbol) getHandle() (err error) {
-	var handle uint32
-	if node.Handle != nil {
-		handle = *node.Handle
-
-	} else {
-		handleData, _ := node.Connection.adsSyncReadWriteReq(
-			ADSIGRP_SYM_HNDBYNAME,
-			0x0,
-			uint32(unsafe.Sizeof(handle)),
-			[]byte(node.FullName))
-
-		handle = binary.LittleEndian.Uint32(handleData)
-		node.Connection.handles[handle] = node
-		node.Handle = &handle
+func (node *ADSSymbol) Write(value string) {
+	if node.Handle == nil {
+		node.getHandle()
 	}
-	return err
+	node.writeToNode(value, 0)
 }
 
-func (conn *Connection) releaseHandle(handle uint32) (err error) {
-	a := make([]byte, 4)
-	binary.LittleEndian.PutUint32(a, uint32(handle))
-	err = conn.adsSyncWriteReq(
-		ADSIGRP_SYM_RELEASEHND,
-		0x0,
-		a)
-	if err != nil {
-		delete(conn.handles, handle)
-		fmt.Println("handle deleted ", handle)
+// ParseNode returns JSON interface for symbol
+func (node *ADSSymbol) ParseNode() (rData interface{}) {
+
+	if node.Childs == nil {
+		if node.Changed {
+			rData = node.Value
+			node.Changed = false
+		}
+	} else {
+		// if strings.HasPrefix(node.DataType, "ARRAY") {
+		// 	re := regexp.MustCompile(`\[.*\.\.(\d+)\]`)
+		// 	arraySize, _ := strconv.Atoi(re.FindAllStringSubmatch(node.DataType, 1)[0][1])
+		// 	arraySize++
+		// 	localArray := make([]interface{}, arraySize)
+		// 	for _, child := range node.Childs {
+		// 		re := regexp.MustCompile(`\[(\d+)\]`)
+		// 		arrayIndex, _ := strconv.Atoi(re.FindAllStringSubmatch(child.Name, 1)[0][1])
+		// 		localArray[arrayIndex] = child.ParseNode()
+		// 	}
+		// 	rData = localArray
+		// } else {
+		localMap := make(map[string]interface{})
+		for _, child := range node.Childs {
+			if child.Changed {
+				localMap[child.Name] = child.ParseNode()
+				child.Changed = false
+			}
+		}
+		rData = localMap
+	}
+	if node.Parent == nil {
+		tempData := make(map[string]interface{})
+		tempData[node.Name] = rData
+		return tempData
 	}
 	return
 
 }
+
+// 	return
+// }
