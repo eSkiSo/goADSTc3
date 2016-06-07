@@ -50,9 +50,39 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	// fmt.Println(variable.FullName)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
 	variable.parse(cBytes, 0)
-	for _, callback := range variable.ChangedHandlers {
-		callback(*variable)
+	changed := false
+	if variable.Childs == nil {
+		changed = true
+	} else {
+		changed = variable.isNodeChanged()
 	}
+	if changed {
+		for _, callback := range variable.ChangedHandlers {
+			callback(*variable)
+		}
+	}
+	variable.clearNodeChangedFlag()
+}
+func (node *ADSSymbol) clearNodeChangedFlag() {
+	node.Changed = false
+	for _, child := range node.Childs {
+		child.clearNodeChangedFlag()
+	}
+}
+func (node *ADSSymbol) isNodeChanged() (changed bool) {
+	if node.Changed {
+		return true
+	}
+	for _, child := range node.Childs {
+		if child.Childs != nil {
+			changed = child.isNodeChanged()
+			if changed {
+				return true
+			}
+		}
+	}
+
+	return
 }
 
 func AdsGetDllVersion() (version AdsVersion) {
@@ -127,10 +157,11 @@ func (conn *Connection) adsSyncReadReq(group uint32, offset uint32, length uint3
 		C.ulong(offset),
 		C.ulong(length),
 		unsafe.Pointer(cDataToRead)))
-	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(length))
 	if errInt != 0 {
 		err = fmt.Errorf("Error adsSyncReadReq")
+		return data, err
 	}
+	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(length))
 	return data, err
 }
 
@@ -257,14 +288,15 @@ func (node *ADSSymbol) getHandle() (err error) {
 	var handle uint32
 	if node.Handle != nil {
 		handle = *node.Handle
-
 	} else {
-		handleData, _ := node.Connection.adsSyncReadWriteReq(
+		handleData, err := node.Connection.adsSyncReadWriteReq(
 			ADSIGRP_SYM_HNDBYNAME,
 			0x0,
 			uint32(unsafe.Sizeof(handle)),
 			[]byte(node.FullName))
-
+		if err != nil {
+			return err
+		}
 		handle = binary.LittleEndian.Uint32(handleData)
 		node.Connection.handles[handle] = node
 		node.Handle = &handle

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -21,12 +20,13 @@ func main() {
 	address := ads.AddLocalConnection()
 
 	variable := address.Symbols["ALARMS.WorkingAlarms"]
-	variable.GetStringValue()
+	// for _, child := range variable.Childs {
+	// 	fmt.Println(child.Name, child.FullName)
+	// }
+	// for key, variable := range address.Symbols {
+	// 	fmt.Println(key, variable.FullName)
 
-	// variable.GetStringValue()
-	iface := variable.ParseNode()
-	jsonObj, _ := json.Marshal(iface)
-	fmt.Println(string(jsonObj))
+	// }
 
 	variable.AddNotification(4, uint32(time.Second), uint32(time.Second), sendJson)
 
@@ -54,7 +54,10 @@ func main() {
 
 func sendJson(symbol ads.ADSSymbol) {
 	// fmt.Println("Callback", symbol.Name, symbol.Value)
-	jsonEnc := symbol.ParseNode()
-	jsonMarshal, _ := json.Marshal(jsonEnc)
-	fmt.Println(string(jsonMarshal))
+	jsonReturn, err := symbol.GetJSON(true)
+	if err == nil {
+		fmt.Println(string(jsonReturn))
+	} else {
+		fmt.Println(err)
+	}
 }

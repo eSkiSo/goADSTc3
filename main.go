@@ -1,6 +1,7 @@
 package ads
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 )
@@ -117,7 +118,10 @@ func (node *ADSSymbol) AddNotification(mode uint32, cycleTime uint32, maxTime ui
 
 func (node *ADSSymbol) GetStringValue() (value string, err error) {
 	if node.Handle == nil {
-		node.getHandle()
+		err = node.getHandle()
+	}
+	if err != nil {
+		return "", err
 	}
 	data, err := node.Connection.getValueByHandle(
 		*node.Handle,
@@ -134,14 +138,26 @@ func (node *ADSSymbol) Write(value string) {
 	node.writeToNode(value, 0)
 }
 
-// ParseNode returns JSON interface for symbol
-func (node *ADSSymbol) ParseNode() (rData interface{}) {
-
-	if node.Childs == nil {
-		if node.Changed {
-			rData = node.Value
-			node.Changed = false
+// GetJSON (onlyChanged bool) string
+func (node *ADSSymbol) GetJSON(onlyChanged bool) (string, error) {
+	if !onlyChanged {
+		_, err := node.GetStringValue()
+		if err != nil {
+			return "", err
 		}
+	}
+	data := node.parseNode(onlyChanged)
+	if jsonData, err := json.Marshal(data); err == nil {
+		return string(jsonData), nil
+	}
+	return "", nil
+}
+
+// ParseNode returns JSON interface for symbol
+func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
+	if node.Childs == nil {
+		rData = node.Value
+		// node.Changed = false
 	} else {
 		// if strings.HasPrefix(node.DataType, "ARRAY") {
 		// 	re := regexp.MustCompile(`\[.*\.\.(\d+)\]`)
@@ -157,20 +173,24 @@ func (node *ADSSymbol) ParseNode() (rData interface{}) {
 		// } else {
 		localMap := make(map[string]interface{})
 		for _, child := range node.Childs {
-			if child.Changed {
-				localMap[child.Name] = child.ParseNode()
-				child.Changed = false
+			if onlyChanged {
+				if child.Changed {
+					localMap[child.Name] = child.parseNode(true)
+					// child.Changed = false
+				}
+			} else {
+				localMap[child.Name] = child.parseNode(false)
 			}
 		}
 		rData = localMap
+		return
 	}
-	if node.Parent == nil {
-		tempData := make(map[string]interface{})
-		tempData[node.Name] = rData
-		return tempData
-	}
+	// if node.Parent == nil {
+	// 	tempData := make(map[string]interface{})
+	// 	tempData[node.Name] = rData
+	// 	rData = tempData
+	// }
 	return
-
 }
 
 // 	return

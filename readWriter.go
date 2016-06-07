@@ -143,12 +143,12 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 
 		if strcmp(dt.Value, newValue) != 0 {
 			dt.Value = newValue
+			dt.Valid = true
 			dt.Changed = dt.Valid
 			dt.updateChanged(dt.Changed)
 			//fmt.Println(dt.FullName, dt.Value)
 		}
 
-		dt.Valid = true
 	}
 }
 

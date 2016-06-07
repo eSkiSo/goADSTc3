@@ -101,14 +101,19 @@ func (conn *Connection) addSymbol(symbol ADSSymbolUploadSymbol) {
 	sym.Group = symbol.SymbolEntry.IGroup
 	sym.Offset = symbol.SymbolEntry.IOffs
 
+	//fmt.Println(symbol.Name)
+
 	dt, ok := conn.datatypes[symbol.DataType]
 	if ok {
 		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 		sym.Childs = dt.addOffset(&sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
+
 	}
 
 	conn.Symbols[symbol.Name] = sym
-
+	// for _, child := range sym.Childs {
+	// 	conn.Symbols[child.FullName] = *child
+	// }
 	return
 }
 
@@ -141,16 +146,19 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 
 		child.Parent = parent
 
-		parent.Connection.Symbols[child.FullName] = child
+		// parent.Connection.Symbols[child.FullName] = child
 
 		// Check if subitems exist
 		dt, ok := parent.Connection.datatypes[segment.DataType]
 		if ok {
 			//log.Warn("Found sub ",segment.DataType);
 			child.Childs = dt.addOffset(&child, child.Group, child.Offset)
+
 		}
 
 		childs[key] = &child
+		//fmt.Println(child.FullName)
+		child.Connection.Symbols[child.FullName] = *childs[key]
 	}
 
 	return
@@ -228,7 +236,9 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSy
 	}
 
 	buff := bytes.NewBuffer(childs)
-
+	if header.Childs == nil {
+		header.Childs = map[string]ADSSymbolUploadDataType{}
+	}
 	if header.DatatypeEntry.ArrayDim > 0 {
 		// Childs is an array
 		var result AdsDatatypeArrayInfo
@@ -245,11 +255,9 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSy
 	} else {
 		// Childs is standard variables
 		for j := 0; j < (int)(result.SubItems); j++ {
-			if header.Childs == nil {
-				header.Childs = map[string]ADSSymbolUploadDataType{}
-			}
 
 			child, _ := decodeSymbolUploadDataType(buff, header.Name)
+
 			header.Childs[child.Name] = child
 		}
 	}
