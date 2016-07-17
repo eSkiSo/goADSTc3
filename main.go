@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 )
 
 var portOpen bool
 
 type Connection struct {
 	addr                *AmsAddr
+	port                int
 	Symbols             map[string]ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
 	handles             map[uint32]*ADSSymbol
@@ -20,6 +22,8 @@ type ADSSymbol struct {
 	Connection         *Connection
 	Self               *ADSSymbol
 	FullName           string
+	LastUpdateTime     int64
+	MinUpdateInterval  int64
 	Name               string
 	DataType           string
 	Comment            string
@@ -39,28 +43,39 @@ type ADSSymbol struct {
 	Childs map[string]*ADSSymbol
 }
 
-func main() {
+var lock *sync.Mutex
 
+func init() {
+	lock = &sync.Mutex{}
 }
 
 func AddLocalConnection() (conn *Connection) {
+
+	localConnection := Connection{}
 	if !portOpen {
 		adsPortOpen()
 		portOpen = true
 	}
-	localConnection := Connection{}
+
 	localConnection.addr = &AmsAddr{}
 	localConnection.adsGetLocalAddress()
+	fmt.Printf("local connection at %d %d %d \n", localConnection.port, localConnection.addr.Port, localConnection.addr.NetId.B[0])
 	localConnection.addr.Port = 851
 	localConnection.Symbols = map[string]ADSSymbol{}
-	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
 
+	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
 	localConnection.handles = map[uint32]*ADSSymbol{}
 	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
 
-	uploadInfo, _ := localConnection.getSymbolUploadInfo()
+	uploadInfo, err := localConnection.getSymbolUploadInfo()
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("uploadinfo  loaded", uploadInfo.NDatatypeSize, uploadInfo.NSymSize)
 	localConnection.uploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
+	fmt.Println("uploadSymbolInfoDataTypes  loaded")
 	localConnection.uploadSymbolInfoSymbols(uploadInfo.NSymSize)
+	fmt.Println("uploadSymbolInfoSymbols  loaded")
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection

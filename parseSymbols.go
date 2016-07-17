@@ -33,9 +33,6 @@ func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, 
 		uint32(unsafe.Sizeof(uploadInfo)))
 	buff := bytes.NewBuffer(data)
 	binary.Read(buff, binary.LittleEndian, &uploadInfo)
-	if err != nil {
-		err = fmt.Errorf("new error")
-	}
 	return
 }
 

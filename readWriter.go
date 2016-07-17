@@ -141,7 +141,9 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = "nil"
 		}
 
-		if strcmp(dt.Value, newValue) != 0 {
+		if strcmp(dt.Value, newValue) != 0 &&
+			time.Now().UnixNano()-dt.LastUpdateTime > dt.MinUpdateInterval {
+			dt.LastUpdateTime = time.Now().UnixNano()
 			dt.Value = newValue
 			dt.Valid = true
 			dt.Changed = dt.Valid
@@ -249,7 +251,9 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) { /*{
 		v64 := math.Float64bits(v)
 		binary.Write(buf, binary.LittleEndian, &v64)
 	case "STRING":
-		buf.Write([]byte(value))
+		newBuf := make([]byte, symbol.Length)
+		copy(newBuf, []byte(value))
+		buf.Write(newBuf)
 	/*case "TIME":
 		if stop-start != 4 {return}
 		i := binary.LittleEndian.Uint32(data[start:stop])
