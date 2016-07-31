@@ -42,6 +42,17 @@ func getConnectionFromAddress(addr AmsAddr) (conn *Connection) {
 	return
 }
 
+func adsAmsPortEnabled() (bool, error) {
+	lock.Lock()
+	defer lock.Unlock()
+	var portOpen C.bool
+	errInt := int(C.AdsAmsPortEnabled(&portOpen))
+	if errInt != 0 {
+		return false, fmt.Errorf(string(errInt))
+	}
+	return bool(portOpen), nil
+}
+
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
 	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
@@ -112,7 +123,7 @@ func adsPortOpen() (port int) {
 func adsPortOpenEx() (port int) {
 	lock.Lock()
 	defer lock.Unlock()
-	port = int(C.AdsPortOpen())
+	port = int(C.AdsPortOpenEx())
 	return
 }
 
