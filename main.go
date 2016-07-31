@@ -12,6 +12,7 @@ var portOpen bool
 type Connection struct {
 	addr                *AmsAddr
 	port                int
+	symbolsLoaded       bool
 	Symbols             map[string]ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
 	handles             map[uint32]*ADSSymbol
@@ -49,39 +50,86 @@ func init() {
 	lock = &sync.Mutex{}
 }
 
-func AddLocalConnection() (conn *Connection) {
+func AddLocalConnection() (conn *Connection, err error) {
 
 	localConnection := Connection{}
-	if !portOpen {
+	open, err := adsAmsPortEnabled()
+	if !open {
 		adsPortOpen()
-		portOpen = true
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	localConnection.addr = &AmsAddr{}
 	localConnection.adsGetLocalAddress()
 	fmt.Printf("local connection at %d %d %d \n", localConnection.port, localConnection.addr.Port, localConnection.addr.NetId.B[0])
 	localConnection.addr.Port = 851
-	localConnection.Symbols = map[string]ADSSymbol{}
 
-	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
-	localConnection.handles = map[uint32]*ADSSymbol{}
-	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
-
-	uploadInfo, err := localConnection.getSymbolUploadInfo()
+	localConnection.initializeConnection()
+	err = localConnection.initializeConnVariables()
 	if err != nil {
-		fmt.Println(err)
+		return
 	}
-	fmt.Println("uploadinfo  loaded", uploadInfo.NDatatypeSize, uploadInfo.NSymSize)
-	localConnection.uploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
-	fmt.Println("uploadSymbolInfoDataTypes  loaded")
-	localConnection.uploadSymbolInfoSymbols(uploadInfo.NSymSize)
-	fmt.Println("uploadSymbolInfoSymbols  loaded")
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
 	return
 }
 
+func AddRemoteConnection(netID string) (conn *Connection, err error) {
+
+	localConnection := Connection{}
+	open, err := adsAmsPortEnabled()
+	if !open {
+		adsPortOpen()
+	}
+	if err != nil {
+		return nil, err
+	}
+	localConnection.addr = &AmsAddr{}
+	localConnection.setRemoteAddress(netID)
+	fmt.Printf("remote connection at %d %d %d \n", localConnection.port, localConnection.addr.Port, localConnection.addr.NetId.B[0])
+	localConnection.addr.Port = 851
+
+	localConnection.initializeConnection()
+	err = localConnection.initializeConnVariables()
+	if err != nil {
+		return
+	}
+
+	connections = append(connections, &localConnection)
+	conn = &localConnection
+	return conn, err
+}
+
+func (localConnection *Connection) initializeConnVariables() error {
+	uploadInfo, err := localConnection.getSymbolUploadInfo()
+	if err != nil {
+		return err
+	}
+	fmt.Println("uploadinfo  loaded", uploadInfo.NDatatypeSize, uploadInfo.NSymSize)
+	err = localConnection.uploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
+	if err != nil {
+		return err
+	}
+	fmt.Println("uploadSymbolInfoDataTypes  loaded")
+	err = localConnection.uploadSymbolInfoSymbols(uploadInfo.NSymSize)
+	if err != nil {
+		return err
+	}
+	fmt.Println("uploadSymbolInfoSymbols  loaded")
+	return err
+}
+
+func (localConnection *Connection) initializeConnection() {
+	localConnection.Symbols = map[string]ADSSymbol{}
+	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
+	localConnection.handles = map[uint32]*ADSSymbol{}
+	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
+}
+
+// CloseAllConnections closes open connections
 func CloseAllConnections() {
 	for _, conn := range connections {
 		conn.CloseConnection()
@@ -92,17 +140,18 @@ func CloseAllConnections() {
 	}
 }
 
-func (conn *Connection) CloseConnection() {
-	for k := range conn.handles {
-		err := conn.releaseHandle(k)
+// CloseConnection closes current connection
+func (localConnection *Connection) CloseConnection() {
+	for k := range localConnection.handles {
+		err := localConnection.releaseHandle(k)
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("deleted handle %d", k)
 		}
 	}
-	for k := range conn.notificationHandles {
-		err := conn.releasNotificationeHandle(k)
+	for k := range localConnection.notificationHandles {
+		err := localConnection.releasNotificationeHandle(k)
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -126,11 +175,13 @@ func showInfoComments(info ADSSymbol) {
 
 }
 
+// AddNotification adds event notification to handle
 func (node *ADSSymbol) AddNotification(mode uint32, cycleTime uint32, maxTime uint32, callback func(ADSSymbol)) {
 	node.adsSyncAddDeviceNotificationReq(mode, maxTime, cycleTime)
 	node.addCallback(callback)
 }
 
+// GetStringValue returns value from PLC in string format
 func (node *ADSSymbol) GetStringValue() (value string, err error) {
 	if node.Handle == nil {
 		err = node.getHandle()
@@ -141,8 +192,11 @@ func (node *ADSSymbol) GetStringValue() (value string, err error) {
 	data, err := node.Connection.getValueByHandle(
 		*node.Handle,
 		node.Length)
-	node.parse(data, 0)
+	if err != nil {
+		return "", err
+	}
 
+	node.parse(data, 0)
 	return node.Value, err
 }
 

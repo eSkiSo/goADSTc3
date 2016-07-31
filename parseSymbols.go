@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"unsafe"
 )
 
@@ -36,11 +35,10 @@ func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, 
 	return
 }
 
-func (conn *Connection) uploadSymbolInfoSymbols(length uint32) {
-	res, e := conn.adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
-	if e != nil {
-		log.Fatal(e)
-		return
+func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
+	res, err := conn.adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
+	if err != nil {
+		return err
 	}
 
 	if conn.Symbols == nil {
@@ -82,6 +80,7 @@ func (conn *Connection) uploadSymbolInfoSymbols(length uint32) {
 		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
 
 	}
+	return err
 }
 
 func (conn *Connection) addSymbol(symbol ADSSymbolUploadSymbol) {
