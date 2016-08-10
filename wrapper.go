@@ -46,9 +46,9 @@ func adsAmsPortEnabled() (bool, error) {
 	lock.Lock()
 	defer lock.Unlock()
 	var portOpen C.bool
-	errInt := int(C.AdsAmsPortEnabled(&portOpen))
-	if errInt != 0 {
-		return false, fmt.Errorf(string(errInt))
+	errInt := C.AdsAmsPortEnabled(&portOpen)
+	if errInt != 0 && errInt != 1864 {
+		return false, fmt.Errorf("Error checking port %d", errInt)
 	}
 	return bool(portOpen), nil
 }

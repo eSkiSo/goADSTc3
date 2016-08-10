@@ -54,11 +54,12 @@ func AddLocalConnection() (conn *Connection, err error) {
 
 	localConnection := Connection{}
 	open, err := adsAmsPortEnabled()
-	if !open {
-		adsPortOpen()
-	}
 	if err != nil {
 		return nil, err
+	}
+
+	if !open {
+		adsPortOpen()
 	}
 
 	localConnection.addr = &AmsAddr{}
