@@ -17,9 +17,9 @@ func main() {
 
 	fmt.Println()
 
-	address := ads.AddLocalConnection()
+	address, _ := ads.AddLocalConnection()
 
-	variable := address.Symbols["ALARMS.WorkingAlarms"]
+	variable := address.Symbols["GVL.TakePicture"]
 	// for _, child := range variable.Childs {
 	// 	fmt.Println(child.Name, child.FullName)
 	// }
@@ -28,7 +28,7 @@ func main() {
 
 	// }
 
-	variable.AddNotification(4, uint32(time.Second), uint32(time.Second), sendJson)
+	variable.AddNotification(4, uint32(time.Second)/4, uint32(time.Second)/4, sendJson)
 
 	// jsonObj := gabs.New()
 	// variable.GetJson(jsonObj, "")

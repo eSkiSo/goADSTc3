@@ -370,7 +370,6 @@ const (
 
 func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDelay uint32, cycleTime uint32) {
 	lock.Lock()
-	defer lock.Unlock()
 
 	notAttrib := AdsNotificationAttrib{}
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
@@ -379,7 +378,9 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	notAttrib.NTransMode = uint32(transMode)
 
 	if node.Handle == nil {
+		lock.Unlock()
 		node.getHandle()
+		lock.Lock()
 		fmt.Println("node handle", &node.Handle)
 	}
 
@@ -411,6 +412,7 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	fmt.Println(node.FullName)
 	fmt.Println(node.NotificationHandle)
 	fmt.Println("done")
+	lock.Unlock()
 }
 
 func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDelay uint32, cycleTime uint32) {
@@ -496,6 +498,7 @@ func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
 }
 
 func (node *ADSSymbol) getHandle() (err error) {
+	fmt.Println("debug nodehandle 1")
 	var handle uint32
 	if node.Handle != nil {
 		handle = *node.Handle
