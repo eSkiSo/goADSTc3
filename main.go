@@ -28,8 +28,8 @@ type ADSSymbol struct {
 	Name               string
 	DataType           string
 	Comment            string
-	Handle             *uint32
-	NotificationHandle *uint32
+	Handle             uint32
+	NotificationHandle uint32
 	ChangedHandlers    []func(ADSSymbol)
 
 	Group  uint32
@@ -184,14 +184,14 @@ func (node *ADSSymbol) AddNotification(mode uint32, cycleTime uint32, maxTime ui
 
 // GetStringValue returns value from PLC in string format
 func (node *ADSSymbol) GetStringValue() (value string, err error) {
-	if node.Handle == nil {
+	if node.Handle == 0 {
 		err = node.getHandle()
 	}
 	if err != nil {
 		return "", err
 	}
 	data, err := node.Connection.getValueByHandle(
-		*node.Handle,
+		node.Handle,
 		node.Length)
 	if err != nil {
 		return "", err
@@ -202,7 +202,7 @@ func (node *ADSSymbol) GetStringValue() (value string, err error) {
 }
 
 func (node *ADSSymbol) Write(value string) {
-	if node.Handle == nil {
+	if node.Handle == 0 {
 		node.getHandle()
 	}
 	node.writeToNode(value, 0)

@@ -284,23 +284,23 @@ func (conn *Connection) adsSyncReadReqEx2(group uint32, offset uint32, length ui
 }
 
 func (node *ADSSymbol) writeBuffArray(data []byte) {
-	if node.Handle == nil {
+	if node.Handle == 0 {
 		node.getHandle()
 	}
 	node.Connection.adsSyncWriteReq(
 		ADSIGRP_SYM_VALBYHND,
-		uint32(*node.Handle),
+		uint32(node.Handle),
 		data)
 
 }
 
 func (node *ADSSymbol) writeBuffArrayEx(data []byte) {
-	if node.Handle == nil {
+	if node.Handle == 0 {
 		node.getHandle()
 	}
 	node.Connection.adsSyncWriteReqEx(
 		ADSIGRP_SYM_VALBYHND,
-		uint32(*node.Handle),
+		uint32(node.Handle),
 		data)
 
 }
@@ -377,7 +377,7 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	notAttrib.CbLength = node.Length
 	notAttrib.NTransMode = uint32(transMode)
 
-	if node.Handle == nil {
+	if node.Handle == 0 {
 		lock.Unlock()
 		node.getHandle()
 		lock.Lock()
@@ -395,18 +395,18 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	nErrInt := int(C.AdsSyncAddDeviceNotificationReq(
 		(*C.AmsAddr)(unsafe.Pointer(node.Connection.addr)),
 		ADSIGRP_SYM_VALBYHND,
-		C.ulong(*node.Handle),
+		C.ulong(node.Handle),
 		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
 		(C.PAdsNotificationFuncEx)(C.Callback),
-		C.ulong(*node.Handle),
+		C.ulong(node.Handle),
 		&hNotification))
 
 	handle = uint32(hNotification)
 	fmt.Println("handle for notification", handle)
 	fmt.Println("error for notification", nErrInt)
 
-	node.NotificationHandle = &handle
-	node.Connection.notificationHandles[*node.NotificationHandle] = node
+	node.NotificationHandle = handle
+	node.Connection.notificationHandles[node.NotificationHandle] = node
 
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
@@ -425,7 +425,7 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 	notAttrib.CbLength = node.Length
 	notAttrib.NTransMode = uint32(transMode)
 
-	if node.Handle == nil {
+	if node.Handle == 0 {
 		node.getHandle()
 		fmt.Println("node handle", &node.Handle)
 	}
@@ -442,18 +442,18 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 		C.long(node.Connection.port),
 		(*C.AmsAddr)(unsafe.Pointer(node.Connection.addr)),
 		ADSIGRP_SYM_VALBYHND,
-		C.ulong(*node.Handle),
+		C.ulong(node.Handle),
 		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
 		(C.PAdsNotificationFuncEx)(C.Callback),
-		C.ulong(*node.Handle),
+		C.ulong(node.Handle),
 		&hNotification))
 
 	handle = uint32(hNotification)
 	fmt.Println("handle for notification", handle)
 	fmt.Println("error for notification", nErrInt)
 
-	node.NotificationHandle = &handle
-	node.Connection.notificationHandles[*node.NotificationHandle] = node
+	node.NotificationHandle = handle
+	node.Connection.notificationHandles[node.NotificationHandle] = node
 
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
@@ -500,8 +500,8 @@ func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
 func (node *ADSSymbol) getHandle() (err error) {
 	fmt.Println("debug nodehandle 1")
 	var handle uint32
-	if node.Handle != nil {
-		handle = *node.Handle
+	if node.Handle != 0 {
+		handle = node.Handle
 	} else {
 		handleData, err := node.Connection.adsSyncReadWriteReq(
 			ADSIGRP_SYM_HNDBYNAME,
@@ -513,7 +513,7 @@ func (node *ADSSymbol) getHandle() (err error) {
 		}
 		handle = binary.LittleEndian.Uint32(handleData)
 		node.Connection.handles[handle] = node
-		node.Handle = &handle
+		node.Handle = handle
 	}
 	return err
 }
