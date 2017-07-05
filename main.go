@@ -225,7 +225,7 @@ func (node *ADSSymbol) GetJSON(onlyChanged bool) (string, error) {
 
 // ParseNode returns JSON interface for symbol
 func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
-	if node.Childs == nil {
+	if len(node.Childs) == 0 {
 		rData = node.Value
 		// node.Changed = false
 	} else {
