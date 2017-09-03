@@ -216,7 +216,8 @@ func (node *ADSSymbol) GetJSON(onlyChanged bool) (string, error) {
 			return "", err
 		}
 	}
-	data := node.parseNode(onlyChanged)
+	data := make(map[string]interface{})
+	data[node.FullName] = node.parseNode(onlyChanged)
 	if jsonData, err := json.Marshal(data); err == nil {
 		return string(jsonData), nil
 	}
