@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -73,11 +74,20 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 		changed = variable.isNodeChanged()
 	}
 	if changed {
+		var wg sync.WaitGroup
+		wg.Add(len(variable.ChangedHandlers))
 		for _, callback := range variable.ChangedHandlers {
-			go callback(*variable)
+			go func(localCallback func(*ADSSymbol)) {
+				defer wg.Done()
+				localCallback(variable)
+			}(callback)
 		}
+		wg.Wait()
+		variable.clearNodeChangedFlag()
+	} else {
+		variable.clearNodeChangedFlag()
 	}
-	variable.clearNodeChangedFlag()
+
 }
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
@@ -488,9 +498,9 @@ func (conn *Connection) adsSyncDelDeviceNotificationReqEx(handle uint32) (err er
 	return
 }
 
-func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
+func (node *ADSSymbol) addCallback(function func(*ADSSymbol)) {
 	if node.ChangedHandlers == nil {
-		node.ChangedHandlers = make([]func(ADSSymbol), 1)
+		node.ChangedHandlers = make([]func(*ADSSymbol), 1)
 		node.ChangedHandlers[0] = function
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 )
 
 var portOpen bool
@@ -13,7 +14,7 @@ type Connection struct {
 	addr                *AmsAddr
 	port                int
 	symbolsLoaded       bool
-	Symbols             map[string]ADSSymbol
+	Symbols             map[string]*ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
 	handles             map[uint32]*ADSSymbol
 	notificationHandles map[uint32]*ADSSymbol
@@ -30,7 +31,7 @@ type ADSSymbol struct {
 	Comment            string
 	Handle             uint32
 	NotificationHandle uint32
-	ChangedHandlers    []func(ADSSymbol)
+	ChangedHandlers    []func(*ADSSymbol) // Fix: doesn't allow change values
 
 	Group  uint32
 	Offset uint32
@@ -124,7 +125,7 @@ func (localConnection *Connection) initializeConnVariables() error {
 }
 
 func (localConnection *Connection) initializeConnection() {
-	localConnection.Symbols = map[string]ADSSymbol{}
+	localConnection.Symbols = map[string]*ADSSymbol{}
 	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
 	localConnection.handles = map[uint32]*ADSSymbol{}
 	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
@@ -161,24 +162,24 @@ func (localConnection *Connection) CloseConnection() {
 	}
 }
 
-func showComments(info ADSSymbolUploadDataType) {
+func showComments(info *ADSSymbolUploadDataType) {
 	fmt.Println(info.Name)
 	for _, value := range info.Childs {
 		showComments(value)
 	}
 }
 
-func showInfoComments(info ADSSymbol) {
+func showInfoComments(info *ADSSymbol) {
 	fmt.Println(info.Name)
 	for _, value := range info.Childs {
-		showInfoComments(*value)
+		showInfoComments(value)
 	}
 
 }
 
 // AddNotification adds event notification to handle
-func (node *ADSSymbol) AddNotification(mode uint32, cycleTime uint32, maxTime uint32, callback func(ADSSymbol)) {
-	node.adsSyncAddDeviceNotificationReq(mode, maxTime, cycleTime)
+func (node *ADSSymbol) AddNotification(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback func(*ADSSymbol)) {
+	node.adsSyncAddDeviceNotificationReq(mode, uint32(maxTime), uint32(cycleTime))
 	node.addCallback(callback)
 }
 

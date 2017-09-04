@@ -146,18 +146,18 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			dt.LastUpdateTime = time.Now().UnixNano()
 			dt.Value = newValue
 			dt.Valid = true
-			dt.Changed = dt.Valid
-			dt.updateChanged(dt.Changed)
+			dt.Changed = true
+			dt.updateChanged(true)
 			//fmt.Println(dt.FullName, dt.Value)
 		}
 
 	}
 }
 
-func (node *ADSSymbol) updateChanged(value bool) {
-	node.Changed = value
-	if node.Parent != nil {
-		node.Parent.updateChanged(value)
+func (dt *ADSSymbol) updateChanged(value bool) {
+	dt.Changed = value
+	if dt.Parent != nil {
+		dt.Parent.updateChanged(value)
 	}
 }
 
