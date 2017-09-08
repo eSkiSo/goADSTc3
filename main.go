@@ -31,7 +31,7 @@ type ADSSymbol struct {
 	Comment            string
 	Handle             uint32
 	NotificationHandle uint32
-	ChangedHandlers    []func(*ADSSymbol) // Fix: doesn't allow change values
+	ChangedHandlers    []func(ADSSymbol) // Fix: doesn't allow change values
 
 	Group  uint32
 	Offset uint32
@@ -178,7 +178,7 @@ func showInfoComments(info *ADSSymbol) {
 }
 
 // AddNotification adds event notification to handle
-func (node *ADSSymbol) AddNotification(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback func(*ADSSymbol)) {
+func (node *ADSSymbol) AddNotification(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback func(ADSSymbol)) {
 	node.adsSyncAddDeviceNotificationReq(mode, uint32(maxTime), uint32(cycleTime))
 	node.addCallback(callback)
 }

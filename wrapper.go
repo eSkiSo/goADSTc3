@@ -77,12 +77,15 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 		var wg sync.WaitGroup
 		wg.Add(len(variable.ChangedHandlers))
 		for _, callback := range variable.ChangedHandlers {
-			go func(localCallback func(*ADSSymbol)) {
+			go func(localCallback func(ADSSymbol)) {
 				defer wg.Done()
-				localCallback(variable)
+				localCallback(*variable)
 			}(callback)
 		}
 		wg.Wait()
+		// for _, callback := range variable.ChangedHandlers {
+		// 	callback(*variable)
+		// }
 		variable.clearNodeChangedFlag()
 	} else {
 		variable.clearNodeChangedFlag()
@@ -498,9 +501,9 @@ func (conn *Connection) adsSyncDelDeviceNotificationReqEx(handle uint32) (err er
 	return
 }
 
-func (node *ADSSymbol) addCallback(function func(*ADSSymbol)) {
+func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
 	if node.ChangedHandlers == nil {
-		node.ChangedHandlers = make([]func(*ADSSymbol), 1)
+		node.ChangedHandlers = make([]func(ADSSymbol), 1)
 		node.ChangedHandlers[0] = function
 		return
 	}
