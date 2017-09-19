@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -248,11 +249,19 @@ func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
 		for _, child := range node.Childs {
 			if onlyChanged {
 				if child.Changed {
-					localMap[child.Name] = child.parseNode(true)
+					var re = regexp.MustCompile(`\[`)
+					s := re.ReplaceAllString(child.Name, `"[`)
+					re = regexp.MustCompile(`\]`)
+					s = re.ReplaceAllString(s, `]"`)
+					localMap[s] = child.parseNode(true)
 					// child.Changed = false
 				}
 			} else {
-				localMap[child.Name] = child.parseNode(false)
+				var re = regexp.MustCompile(`\[`)
+				s := re.ReplaceAllString(child.Name, `"[`)
+				re = regexp.MustCompile(`\]`)
+				s = re.ReplaceAllString(s, `]"`)
+				localMap[s] = child.parseNode(false)
 			}
 		}
 		rData = localMap
