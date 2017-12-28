@@ -46,10 +46,10 @@ type ADSSymbol struct {
 	Childs map[string]*ADSSymbol
 }
 
-var lock *sync.Mutex
+var lock *sync.RWMutex
 
 func init() {
-	lock = &sync.Mutex{}
+	lock = &sync.RWMutex{}
 }
 
 func AddLocalConnection() (conn *Connection, err error) {
