@@ -78,8 +78,8 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 		wg.Add(len(variable.ChangedHandlers))
 		for _, callback := range variable.ChangedHandlers {
 			go func(localCallback func(ADSSymbol)) {
+				defer wg.Done()
 				localCallback(*variable)
-				wg.Done()
 			}(callback)
 		}
 		wg.Wait()
