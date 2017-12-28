@@ -19,6 +19,7 @@ type Connection struct {
 	datatypes           map[string]ADSSymbolUploadDataType
 	handles             map[uint32]*ADSSymbol
 	notificationHandles map[uint32]*ADSSymbol
+	// notificationHandles sync.map
 }
 
 type ADSSymbol struct {

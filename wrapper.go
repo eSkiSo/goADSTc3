@@ -56,7 +56,6 @@ func adsAmsPortEnabled() (bool, error) {
 
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
-	lock.Lock()
 	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
 	connection := getConnectionFromAddress(*goAmsAddr)
 	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
@@ -79,8 +78,8 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 		wg.Add(len(variable.ChangedHandlers))
 		for _, callback := range variable.ChangedHandlers {
 			go func(localCallback func(ADSSymbol)) {
-				defer wg.Done()
 				localCallback(*variable)
+				wg.Done()
 			}(callback)
 		}
 		wg.Wait()
@@ -91,7 +90,6 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	} else {
 		variable.clearNodeChangedFlag()
 	}
-	lock.Unlock()
 }
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
