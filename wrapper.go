@@ -11,7 +11,7 @@ package ads
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsDef.h"
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsAPI.h"
 
-void  Callback(AmsAddr*, AdsNotificationHeader*, unsigned long);
+void  notificationFun(AmsAddr*, AdsNotificationHeader*,unsigned long);
 
 */
 import "C"
@@ -57,7 +57,7 @@ func adsAmsPortEnabled() (bool, error) {
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
 	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
 	connection := getConnectionFromAddress(*goAmsAddr)
-	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
+	variable, ok := connection.notificationHandles.Load(uint32(notification.hNotification))
 	if !ok {
 		//lock.Unlock()
 		fmt.Println(notification.hNotification)
@@ -65,12 +65,12 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	}
 	// fmt.Println(variable.FullName)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-	variable.parse(cBytes, 0)
+	variable.(*ADSSymbol).parse(cBytes, 0)
 	changed := false
-	if variable.Childs == nil {
+	if variable.(*ADSSymbol).Childs == nil {
 		changed = true
 	} else {
-		changed = variable.isNodeChanged()
+		changed = variable.(*ADSSymbol).isNodeChanged()
 	}
 	if changed {
 		// var wg sync.WaitGroup
@@ -82,11 +82,11 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 		// 	}(callback)
 		// }
 		// wg.Wait()
-		for _, callback := range variable.ChangedHandlers {
-			callback(*variable)
+		for _, callback := range variable.(*ADSSymbol).ChangedHandlers {
+			callback(*variable.(*ADSSymbol))
 		}
 	}
-	variable.clearNodeChangedFlag()
+	variable.(*ADSSymbol).clearNodeChangedFlag()
 }
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
@@ -378,8 +378,6 @@ const (
 )
 
 func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDelay uint32, cycleTime uint32) {
-	lock.Lock()
-
 	notAttrib := AdsNotificationAttrib{}
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
 	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
@@ -387,26 +385,25 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	notAttrib.NTransMode = uint32(transMode)
 
 	if node.Handle == 0 {
-		lock.Unlock()
 		node.getHandle()
-		lock.Lock()
 		fmt.Println("node handle", &node.Handle)
 	}
 
-	if node.Connection.notificationHandles == nil {
-		node.Connection.notificationHandles = make(map[uint32]*ADSSymbol)
-	}
+	// if node.Connection.notificationHandles == nil {
+	// 	node.Connection.notificationHandles = make(map[uint32]*ADSSymbol)
+	// }
 
 	var handle uint32
 
 	hNotification := C.ulong(0)
 	//f := C.Callback
+	lock.Lock()
 	nErrInt := int(C.AdsSyncAddDeviceNotificationReq(
 		(*C.AmsAddr)(unsafe.Pointer(node.Connection.addr)),
 		ADSIGRP_SYM_VALBYHND,
 		C.ulong(node.Handle),
 		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
-		(C.PAdsNotificationFuncEx)(C.Callback),
+		(C.PAdsNotificationFuncEx)(C.notificationFun),
 		C.ulong(node.Handle),
 		&hNotification))
 
@@ -415,7 +412,8 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	fmt.Println("error for notification", nErrInt)
 
 	node.NotificationHandle = handle
-	node.Connection.notificationHandles[node.NotificationHandle] = node
+	node.Connection.notificationHandles.Store(node.NotificationHandle, node)
+	// node.Connection.notificationHandles[node.NotificationHandle] = node
 
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
@@ -439,9 +437,9 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 		fmt.Println("node handle", &node.Handle)
 	}
 
-	if node.Connection.notificationHandles == nil {
-		node.Connection.notificationHandles = make(map[uint32]*ADSSymbol)
-	}
+	// if node.Connection.notificationHandles == nil {
+	// 	node.Connection.notificationHandles = make(map[uint32]*ADSSymbol)
+	// }
 
 	var handle uint32
 
@@ -453,7 +451,7 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 		ADSIGRP_SYM_VALBYHND,
 		C.ulong(node.Handle),
 		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
-		(C.PAdsNotificationFuncEx)(C.Callback),
+		(C.PAdsNotificationFuncEx)(C.notificationFun),
 		C.ulong(node.Handle),
 		&hNotification))
 
@@ -462,8 +460,8 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 	fmt.Println("error for notification", nErrInt)
 
 	node.NotificationHandle = handle
-	node.Connection.notificationHandles[node.NotificationHandle] = node
-
+	// node.Connection.notificationHandles[node.NotificationHandle] = node
+	node.Connection.notificationHandles.Store(node.NotificationHandle, node)
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
 	fmt.Println(node.NotificationHandle)
@@ -507,7 +505,6 @@ func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
 }
 
 func (node *ADSSymbol) getHandle() (err error) {
-	fmt.Println("debug nodehandle 1")
 	var handle uint32
 	if node.Handle != 0 {
 		handle = node.Handle
@@ -521,7 +518,10 @@ func (node *ADSSymbol) getHandle() (err error) {
 			return err
 		}
 		handle = binary.LittleEndian.Uint32(handleData)
-		node.Connection.handles[handle] = node
+
+		// node.Connection.handles[handle] = node
+		node.Connection.handles.Store(handle, node)
+
 		node.Handle = handle
 	}
 	return err
@@ -544,7 +544,8 @@ func (conn *Connection) releaseHandle(handle uint32) (err error) {
 		0x0,
 		a)
 	if err != nil {
-		delete(conn.handles, handle)
+		conn.handles.Delete(handle)
+		// delete(conn.handles, handle)
 		fmt.Println("handle deleted ", handle)
 	}
 	return
@@ -554,7 +555,8 @@ func (conn *Connection) releaseHandle(handle uint32) (err error) {
 func (conn *Connection) releasNotificationeHandle(handle uint32) (err error) {
 	conn.adsSyncDelDeviceNotificationReq(handle)
 	if err != nil {
-		delete(conn.notificationHandles, handle)
+		conn.notificationHandles.Delete(handle)
+		// delete(conn.notificationHandles, handle)
 		fmt.Println("notification handle deleted ", handle)
 	}
 	return

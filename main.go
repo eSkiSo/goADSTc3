@@ -15,10 +15,10 @@ type Connection struct {
 	addr                *AmsAddr
 	port                int
 	symbolsLoaded       bool
-	Symbols             map[string]*ADSSymbol
+	Symbols             sync.Map // map[string]*ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
-	handles             map[uint32]*ADSSymbol
-	notificationHandles map[uint32]*ADSSymbol
+	handles             sync.Map // map[uint32]*ADSSymbol
+	notificationHandles sync.Map // map[uint32]*ADSSymbol
 	// notificationHandles sync.map
 }
 
@@ -127,10 +127,10 @@ func (localConnection *Connection) initializeConnVariables() error {
 }
 
 func (localConnection *Connection) initializeConnection() {
-	localConnection.Symbols = map[string]*ADSSymbol{}
+	// localConnection.Symbols = map[string]*ADSSymbol{}
 	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
-	localConnection.handles = map[uint32]*ADSSymbol{}
-	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
+	// localConnection.handles = map[uint32]*ADSSymbol{}
+	// localConnection.notificationHandles = map[uint32]*ADSSymbol{}
 }
 
 // CloseAllConnections closes open connections
@@ -146,22 +146,33 @@ func CloseAllConnections() {
 
 // CloseConnection closes current connection
 func (localConnection *Connection) CloseConnection() {
-	for k := range localConnection.handles {
-		err := localConnection.releaseHandle(k)
+	localConnection.handles.Range(func(k, v interface{}) bool {
+		err := localConnection.releaseHandle(k.(uint32))
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("deleted handle %d", k)
 		}
-	}
-	for k := range localConnection.notificationHandles {
-		err := localConnection.releasNotificationeHandle(k)
+		return true
+	})
+	// for k := range localConnection.notificationHandles {
+	// 	err := localConnection.releasNotificationeHandle(k)
+	// 	if err != nil {
+	// 		fmt.Println(err)
+	// 	} else {
+	// 		fmt.Printf("deleted notification handle %d", k)
+	// 	}
+	// }
+	localConnection.notificationHandles.Range(func(k, v interface{}) bool {
+		err := localConnection.releasNotificationeHandle(k.(uint32))
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("deleted notification handle %d", k)
 		}
-	}
+		return true
+	})
+	return
 }
 
 func showComments(info *ADSSymbolUploadDataType) {
