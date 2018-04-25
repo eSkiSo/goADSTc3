@@ -81,7 +81,7 @@ func AddLocalConnection() (conn *Connection, err error) {
 	return
 }
 
-func AddRemoteConnection(netID string) (conn *Connection, err error) {
+func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error) {
 
 	localConnection := Connection{}
 	open, err := adsAmsPortEnabled()
@@ -94,7 +94,7 @@ func AddRemoteConnection(netID string) (conn *Connection, err error) {
 	localConnection.addr = &AmsAddr{}
 	localConnection.setRemoteAddress(netID)
 	fmt.Printf("remote connection at %d %d %d \n", localConnection.port, localConnection.addr.Port, localConnection.addr.NetId.B[0])
-	localConnection.addr.Port = 851
+	localConnection.addr.Port = port
 
 	localConnection.initializeConnection()
 	err = localConnection.initializeConnVariables()
