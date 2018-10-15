@@ -12,12 +12,12 @@ import (
 )
 
 func main() {
-	version := ads.AdsGetDllVersion()
+	version := ads.AddLocalConnection()
 	log.Println(version.Version, version.Revision, version.Build)
 
 	fmt.Println()
 
-	address, _ := ads.AddLocalConnection()
+	address := ads.AddLocalConnection()
 
 	variable, _ := address.Symbols.Load("GVL.TakePicture")
 	// for _, child := range variable.Childs {
@@ -29,7 +29,6 @@ func main() {
 	// }
 
 	variable.AddNotification(4, uint32(time.Second)/4, uint32(time.Second)/4, sendJson)
-
 	// jsonObj := gabs.New()
 	// variable.GetJson(jsonObj, "")
 	// fmt.Println(jsonObj.StringIndent("", "  "))
