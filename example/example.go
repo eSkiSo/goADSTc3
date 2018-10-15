@@ -1,4 +1,4 @@
-package main
+package example
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"gitlab.com/xilix-systems-llc/go-native-ads/v2"
+	"gitlab.com/xilix-systems-llc/go-native-ads/v2/ads"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 
 	address, _ := ads.AddLocalConnection()
 
-	variable := address.Symbols["GVL.TakePicture"]
+	variable, _ := address.Symbols.Load("GVL.TakePicture")
 	// for _, child := range variable.Childs {
 	// 	fmt.Println(child.Name, child.FullName)
 	// }
