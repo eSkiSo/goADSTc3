@@ -41,9 +41,9 @@ func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
 		return err
 	}
 
-	if conn.Symbols == nil {
-		conn.Symbols = map[string]*ADSSymbol{}
-	}
+	// if conn.Symbols == nil {
+	// 	conn.Symbols = map[string]*ADSSymbol{}
+	// }
 
 	var buff = bytes.NewBuffer(res)
 
@@ -106,7 +106,8 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 
 	}
 
-	conn.Symbols[symbol.Name] = sym
+	// conn.Symbols[symbol.Name] = sym
+	conn.Symbols.Store(symbol.Name, sym)
 	// for _, child := range sym.Childs {
 	// 	conn.Symbols[child.FullName] = *child
 	// }
@@ -154,7 +155,8 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 
 		childs[key] = &child
 		//fmt.Println(child.FullName)
-		child.Connection.Symbols[child.FullName] = childs[key]
+		// child.Connection.Symbols[child.FullName] = childs[key]
+		child.Connection.Symbols.Store(child.FullName, childs[key])
 	}
 
 	return

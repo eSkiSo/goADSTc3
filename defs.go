@@ -148,23 +148,22 @@ const ADSERR_DEVICE_EXCEPTION = (0x2C + ERR_ADSERRS)            // exception in 
 const ADSERR_DEVICE_LICENSEDUPLICATED = (0x2D + ERR_ADSERRS)    // license file read twice
 const ADSERR_DEVICE_SIGNATUREINVALID = (0x2E + ERR_ADSERRS)     // invalid signature
 const ADSERR_DEVICE_CERTIFICATEINVALID = (0x2F + ERR_ADSERRS)   // public key certificate
-//
-const ADSERR_CLIENT_ERROR = (0x40 + ERR_ADSERRS)          // Error class < client error >
-const ADSERR_CLIENT_INVALIDPARM = (0x41 + ERR_ADSERRS)    // invalid parameter at service call
-const ADSERR_CLIENT_LISTEMPTY = (0x42 + ERR_ADSERRS)      // polling list	is empty
-const ADSERR_CLIENT_VARUSED = (0x43 + ERR_ADSERRS)        // var connection already in use
-const ADSERR_CLIENT_DUPLINVOKEID = (0x44 + ERR_ADSERRS)   // invoke id in use
-const ADSERR_CLIENT_SYNCTIMEOUT = (0x45 + ERR_ADSERRS)    // timeout elapsed
-const ADSERR_CLIENT_W32ERROR = (0x46 + ERR_ADSERRS)       // error in win32 subsystem
-const ADSERR_CLIENT_TIMEOUTINVALID = (0x47 + ERR_ADSERRS) // ?
-const ADSERR_CLIENT_PORTNOTOPEN = (0x48 + ERR_ADSERRS)    // ads dll
-const ADSERR_CLIENT_NOAMSADDR = (0x49 + ERR_ADSERRS)      // ads dll
-const ADSERR_CLIENT_SYNCINTERNAL = (0x50 + ERR_ADSERRS)   // internal error in ads sync
-const ADSERR_CLIENT_ADDHASH = (0x51 + ERR_ADSERRS)        // hash table overflow
-const ADSERR_CLIENT_REMOVEHASH = (0x52 + ERR_ADSERRS)     // key not found in hash table
-const ADSERR_CLIENT_NOMORESYM = (0x53 + ERR_ADSERRS)      // no more symbols in cache
-const ADSERR_CLIENT_SYNCRESINVALID = (0x54 + ERR_ADSERRS) // invalid response received
-const ADSERR_CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS) // sync port is locked
+const ADSERR_CLIENT_ERROR = (0x40 + ERR_ADSERRS)                // Error class < client error >
+const ADSERR_CLIENT_INVALIDPARM = (0x41 + ERR_ADSERRS)          // invalid parameter at service call
+const ADSERR_CLIENT_LISTEMPTY = (0x42 + ERR_ADSERRS)            // polling list	is empty
+const ADSERR_CLIENT_VARUSED = (0x43 + ERR_ADSERRS)              // var connection already in use
+const ADSERR_CLIENT_DUPLINVOKEID = (0x44 + ERR_ADSERRS)         // invoke id in use
+const ADSERR_CLIENT_SYNCTIMEOUT = (0x45 + ERR_ADSERRS)          // timeout elapsed
+const ADSERR_CLIENT_W32ERROR = (0x46 + ERR_ADSERRS)             // error in win32 subsystem
+const ADSERR_CLIENT_TIMEOUTINVALID = (0x47 + ERR_ADSERRS)       // ?
+const ADSERR_CLIENT_PORTNOTOPEN = (0x48 + ERR_ADSERRS)          // ads dll
+const ADSERR_CLIENT_NOAMSADDR = (0x49 + ERR_ADSERRS)            // ads dll
+const ADSERR_CLIENT_SYNCINTERNAL = (0x50 + ERR_ADSERRS)         // internal error in ads sync
+const ADSERR_CLIENT_ADDHASH = (0x51 + ERR_ADSERRS)              // hash table overflow
+const ADSERR_CLIENT_REMOVEHASH = (0x52 + ERR_ADSERRS)           // key not found in hash table
+const ADSERR_CLIENT_NOMORESYM = (0x53 + ERR_ADSERRS)            // no more symbols in cache
+const ADSERR_CLIENT_SYNCRESINVALID = (0x54 + ERR_ADSERRS)       // invalid response received
+const ADSERR_CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS)       // sync port is locked
 
 type AmsNetId struct {
 	B [6]uint8
