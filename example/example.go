@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"time"
 
-	ads "gitlab.com/xilix-systems-llc/go-native-ads/v2/ads"
+	"gitlab.com/xilix-systems-llc/go-native-ads/ads"
 )
 
 func main() {
