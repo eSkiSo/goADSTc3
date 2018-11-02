@@ -11,7 +11,7 @@ package ads
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsDef.h"
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsAPI.h"
 
-void  notificationFun(AmsAddr*, AdsNotificationHeader*,unsigned long);
+void  notificationFun(AmsAddr*, AdsNotificationHeader*, unsigned long);
 
 */
 import "C"
