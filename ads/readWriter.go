@@ -28,7 +28,7 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 		var newValue = "nil"
 
 		if len(data) < int(dt.Length) {
-			fmt.Errorf("Incoming data is to small, !0<%d<%d<%d", start, stop, len(data))
+			fmt.Printf("Incoming data is to small, !0<%d<%d<%d", start, stop, len(data))
 			return
 		}
 
@@ -166,7 +166,6 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) { /*{
 
 	if len(symbol.Childs) != 0 {
 		err = fmt.Errorf("Cannot write to a whole struct at once!")
-
 		return
 	}
 
