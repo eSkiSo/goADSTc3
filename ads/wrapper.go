@@ -12,7 +12,7 @@ package ads
 #include "C:/TwinCAT/AdsApi/TcAdsDll/Include/TcAdsAPI.h"
 
 void  notificationFun(AmsAddr*, AdsNotificationHeader*, unsigned long);
-
+void  routerNotificationFun(long);
 */
 import "C"
 
@@ -43,10 +43,10 @@ func getConnectionFromAddress(addr AmsAddr) (conn *Connection) {
 }
 
 func adsAmsPortEnabled() (bool, error) {
-	lock.Lock()
-	defer lock.Unlock()
 	var portOpen C.bool
+	adsLock.Lock()
 	errInt := C.AdsAmsPortEnabled(&portOpen)
+	adsLock.Unlock()
 	if errInt != 0 && errInt != 1864 {
 		return false, fmt.Errorf("Error checking port %d", errInt)
 	}
@@ -57,40 +57,31 @@ func adsAmsPortEnabled() (bool, error) {
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
 	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
 	connection := getConnectionFromAddress(*goAmsAddr)
-	variable, ok := connection.notificationHandles.Load(uint32(notification.hNotification))
+	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
 	if !ok {
-		//lock.Unlock()
 		fmt.Println(notification.hNotification)
 		return
 	}
-	// fmt.Println(variable.FullName)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-	variable.(*ADSSymbol).parse(cBytes, 0)
+	variable.parse(cBytes, 0)
 	changed := false
-	if variable.(*ADSSymbol).Childs == nil {
+	if len(variable.Childs) == 0 {
 		changed = true
 	} else {
-		changed = variable.(*ADSSymbol).isNodeChanged()
+		changed = variable.isNodeChanged()
 	}
 	if changed {
-		// var wg sync.WaitGroup
-		// wg.Add(len(variable.ChangedHandlers))
-		// for _, callback := range variable.ChangedHandlers {
-		// 	go func(localCallback func(ADSSymbol)) {
-		// 		defer wg.Done()
-		// 		localCallback(*variable)
-		// 	}(callback)
-		// }
-		// wg.Wait()
-		for _, callback := range variable.(*ADSSymbol).ChangedHandlers {
-			callback(*variable.(*ADSSymbol))
+		for _, callback := range variable.ChangedHandlers {
+			callback(*variable)
 		}
 	}
-	variable.(*ADSSymbol).clearNodeChangedFlag()
+	variable.clearNodeChangedFlag()
 }
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
+	lock.Lock()
 	node.Changed = false
+	lock.Unlock()
 	for _, child := range node.Childs {
 		child.clearNodeChangedFlag()
 	}
@@ -101,21 +92,21 @@ func (node *ADSSymbol) isNodeChanged() (changed bool) {
 		return true
 	}
 	for _, child := range node.Childs {
-		if child.Childs != nil {
+		if len(child.Childs) > 0 {
 			changed = child.isNodeChanged()
 			if changed {
 				return true
 			}
 		}
+		return true
 	}
-
 	return
 }
 
 func AdsGetDllVersion() (version AdsVersion) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	cAdsVersion := C.AdsGetDllVersion()
+	adsLock.Unlock()
 	version = *(*AdsVersion)(unsafe.Pointer(&cAdsVersion))
 	return
 }
@@ -123,23 +114,23 @@ func AdsGetDllVersion() (version AdsVersion) {
 /// opens port on local server
 /// returns port number
 func adsPortOpen() (port int) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	port = int(C.AdsPortOpen())
+	adsLock.Unlock()
 	return
 }
 
 func adsPortOpenEx() (port int) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	port = int(C.AdsPortOpenEx())
+	adsLock.Unlock()
 	return
 }
 
 func adsPortClose() (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	errInt := C.AdsPortClose()
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf(string(errInt))
 	}
@@ -147,9 +138,9 @@ func adsPortClose() (err error) {
 }
 
 func adsPortCloseEx(port int) (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	errInt := C.AdsPortCloseEx(C.long(port))
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf(string(errInt))
 	}
@@ -157,9 +148,9 @@ func adsPortCloseEx(port int) (err error) {
 }
 
 func (conn *Connection) adsGetLocalAddress() (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	errInt := C.AdsGetLocalAddress((*C.AmsAddr)(unsafe.Pointer(conn.addr)))
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf("error %v", errInt)
 	}
@@ -167,9 +158,9 @@ func (conn *Connection) adsGetLocalAddress() (err error) {
 }
 
 func (conn *Connection) adsGetLocalAddressEx() (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	errInt := C.AdsGetLocalAddressEx(C.long(conn.port), (*C.AmsAddr)(unsafe.Pointer(conn.addr)))
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf("error %v", errInt)
 	}
@@ -194,16 +185,16 @@ func (conn *Connection) setRemoteAddress(amsId string) {
 }
 
 func (conn *Connection) adsSyncWriteReq(group uint32, offset uint32, data []byte) (err error) {
-	lock.Lock()
-	defer lock.Unlock()
 	cDataToWrite := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToWrite))
+	adsLock.Lock()
 	errInt := int(C.AdsSyncWriteReq(
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
 		C.ulong(offset),
 		C.ulong(len(data)),
 		unsafe.Pointer(cDataToWrite)))
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf("Error writing adsSyncWriteReq %s", data)
 	}
@@ -211,10 +202,9 @@ func (conn *Connection) adsSyncWriteReq(group uint32, offset uint32, data []byte
 }
 
 func (conn *Connection) adsSyncWriteReqEx(group uint32, offset uint32, data []byte) (err error) {
-	lock.Lock()
-	defer lock.Unlock()
 	cDataToWrite := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToWrite))
+	adsLock.Lock()
 	errInt := int(C.AdsSyncWriteReqEx(
 		C.long(conn.port),
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
@@ -222,6 +212,7 @@ func (conn *Connection) adsSyncWriteReqEx(group uint32, offset uint32, data []by
 		C.ulong(offset),
 		C.ulong(len(data)),
 		unsafe.Pointer(cDataToWrite)))
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf("Error writing adsSyncWriteReq %s", data)
 	}
@@ -229,18 +220,17 @@ func (conn *Connection) adsSyncWriteReqEx(group uint32, offset uint32, data []by
 }
 
 func (conn *Connection) adsSyncReadReq(group uint32, offset uint32, length uint32) (data []byte, err error) {
-	lock.Lock()
-	defer lock.Unlock()
 	data = make([]byte, length)
 	cDataToRead := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToRead))
-
+	adsLock.Lock()
 	errInt := int(C.AdsSyncReadReq(
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
 		C.ulong(offset),
 		C.ulong(length),
 		unsafe.Pointer(cDataToRead)))
+	adsLock.Unlock()
 	if errInt != 0 {
 		err = fmt.Errorf("Error adsSyncReadReq")
 		return data, err
@@ -250,11 +240,10 @@ func (conn *Connection) adsSyncReadReq(group uint32, offset uint32, length uint3
 }
 
 func (conn *Connection) adsSyncReadReqEx(group uint32, offset uint32, length uint32) (data []byte, err error) {
-	lock.Lock()
-	defer lock.Unlock()
 	amountOfDataReturned := C.ulong(0)
 	cData := C.CString(string(make([]byte, length)))
 	defer C.free(unsafe.Pointer(cData))
+	adsLock.Lock()
 	errInt := int(C.AdsSyncReadReqEx(
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
@@ -262,6 +251,7 @@ func (conn *Connection) adsSyncReadReqEx(group uint32, offset uint32, length uin
 		C.ulong(length),
 		unsafe.Pointer(cData),
 		&amountOfDataReturned))
+	adsLock.Unlock()
 	data = C.GoBytes(unsafe.Pointer(cData), C.int(amountOfDataReturned))
 	if errInt != 0 {
 		err = fmt.Errorf("Error adsSyncReadReqEx", errInt)
@@ -270,11 +260,10 @@ func (conn *Connection) adsSyncReadReqEx(group uint32, offset uint32, length uin
 }
 
 func (conn *Connection) adsSyncReadReqEx2(group uint32, offset uint32, length uint32) (data []byte, err error) {
-	lock.Lock()
-	defer lock.Unlock()
 	amountOfDataReturned := C.ulong(length)
 	cData := C.CString(string(make([]byte, length)))
 	defer C.free(unsafe.Pointer(cData))
+	adsLock.Lock()
 	errInt := int(C.AdsSyncReadReqEx2(
 		C.long(conn.port),
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
@@ -283,6 +272,7 @@ func (conn *Connection) adsSyncReadReqEx2(group uint32, offset uint32, length ui
 		C.ulong(length),
 		unsafe.Pointer(cData),
 		&amountOfDataReturned))
+	adsLock.Unlock()
 	fmt.Println("amount of data returned", amountOfDataReturned)
 	data = C.GoBytes(unsafe.Pointer(cData), C.int(amountOfDataReturned))
 	fmt.Println(errInt)
@@ -300,7 +290,6 @@ func (node *ADSSymbol) writeBuffArray(data []byte) {
 		ADSIGRP_SYM_VALBYHND,
 		uint32(node.Handle),
 		data)
-
 }
 
 func (node *ADSSymbol) writeBuffArrayEx(data []byte) {
@@ -311,20 +300,16 @@ func (node *ADSSymbol) writeBuffArrayEx(data []byte) {
 		ADSIGRP_SYM_VALBYHND,
 		uint32(node.Handle),
 		data)
-
 }
 
 func (conn *Connection) adsSyncReadWriteReq(group uint32, offset uint32, readLength uint32, dataToWrite []byte) (data []byte, err error) {
-	lock.Lock()
-	defer lock.Unlock()
-
 	data = make([]byte, readLength)
 	cDataToRead := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToRead))
 
 	cDataToWrite := C.CString(string(dataToWrite))
 	defer C.free(unsafe.Pointer(cDataToWrite))
-
+	adsLock.Lock()
 	errInt := int(C.AdsSyncReadWriteReq(
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(group),
@@ -333,6 +318,7 @@ func (conn *Connection) adsSyncReadWriteReq(group uint32, offset uint32, readLen
 		unsafe.Pointer(cDataToRead),
 		C.ulong(len(dataToWrite)),
 		unsafe.Pointer(cDataToWrite)))
+	adsLock.Unlock()
 	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(readLength))
 	if errInt != 0 {
 		err = fmt.Errorf("Error adsSyncReadWriteReq %v", errInt)
@@ -341,8 +327,6 @@ func (conn *Connection) adsSyncReadWriteReq(group uint32, offset uint32, readLen
 }
 
 func (conn *Connection) adsSyncReadWriteReqEx2(group uint32, offset uint32, readLength uint32, dataToWrite []byte) (data []byte, err error) {
-	lock.Lock()
-	defer lock.Unlock()
 	data = make([]byte, readLength)
 	cDataToRead := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToRead))
@@ -351,7 +335,7 @@ func (conn *Connection) adsSyncReadWriteReqEx2(group uint32, offset uint32, read
 	defer C.free(unsafe.Pointer(cDataToWrite))
 
 	cLengthOfReturnedBytes := C.ulong(0)
-
+	adsLock.Lock()
 	errInt := int(C.AdsSyncReadWriteReqEx2(
 		C.long(conn.port),
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
@@ -362,6 +346,7 @@ func (conn *Connection) adsSyncReadWriteReqEx2(group uint32, offset uint32, read
 		C.ulong(len(dataToWrite)),
 		unsafe.Pointer(cDataToWrite),
 		&cLengthOfReturnedBytes))
+	adsLock.Unlock()
 	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(readLength))
 	if errInt != 0 {
 		err = fmt.Errorf("Error adsSyncReadWriteReq %v", errInt)
@@ -378,6 +363,7 @@ const (
 )
 
 func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDelay uint32, cycleTime uint32) {
+
 	notAttrib := AdsNotificationAttrib{}
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
 	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
@@ -388,16 +374,11 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 		node.getHandle()
 		fmt.Println("node handle", &node.Handle)
 	}
-
-	// if node.Connection.notificationHandles == nil {
-	// 	node.Connection.notificationHandles = make(map[uint32]*ADSSymbol)
-	// }
-
 	var handle uint32
 
 	hNotification := C.ulong(0)
 	//f := C.Callback
-	lock.Lock()
+	adsLock.Lock()
 	nErrInt := int(C.AdsSyncAddDeviceNotificationReq(
 		(*C.AmsAddr)(unsafe.Pointer(node.Connection.addr)),
 		ADSIGRP_SYM_VALBYHND,
@@ -406,26 +387,23 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 		(C.PAdsNotificationFuncEx)(C.notificationFun),
 		C.ulong(node.Handle),
 		&hNotification))
-
+	adsLock.Unlock()
 	handle = uint32(hNotification)
 	fmt.Println("handle for notification", handle)
 	fmt.Println("error for notification", nErrInt)
 
 	node.NotificationHandle = handle
-	node.Connection.notificationHandles.Store(node.NotificationHandle, node)
-	// node.Connection.notificationHandles[node.NotificationHandle] = node
+	lock.Lock()
+	node.Connection.notificationHandles[node.NotificationHandle] = node
+	lock.Unlock()
 
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
 	fmt.Println(node.NotificationHandle)
 	fmt.Println("done")
-	lock.Unlock()
 }
 
 func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDelay uint32, cycleTime uint32) {
-	lock.Lock()
-	defer lock.Unlock()
-
 	notAttrib := AdsNotificationAttrib{}
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
 	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
@@ -436,15 +414,10 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 		node.getHandle()
 		fmt.Println("node handle", &node.Handle)
 	}
-
-	// if node.Connection.notificationHandles == nil {
-	// 	node.Connection.notificationHandles = make(map[uint32]*ADSSymbol)
-	// }
-
 	var handle uint32
 
 	hNotification := C.ulong(0)
-	//f := C.Callback
+	adsLock.Lock()
 	nErrInt := int(C.AdsSyncAddDeviceNotificationReqEx(
 		C.long(node.Connection.port),
 		(*C.AmsAddr)(unsafe.Pointer(node.Connection.addr)),
@@ -454,14 +427,13 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 		(C.PAdsNotificationFuncEx)(C.notificationFun),
 		C.ulong(node.Handle),
 		&hNotification))
-
+	adsLock.Unlock()
 	handle = uint32(hNotification)
 	fmt.Println("handle for notification", handle)
 	fmt.Println("error for notification", nErrInt)
 
 	node.NotificationHandle = handle
-	// node.Connection.notificationHandles[node.NotificationHandle] = node
-	node.Connection.notificationHandles.Store(node.NotificationHandle, node)
+	node.Connection.notificationHandles[node.NotificationHandle] = node
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
 	fmt.Println(node.NotificationHandle)
@@ -469,12 +441,11 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 }
 
 func (conn *Connection) adsSyncDelDeviceNotificationReq(handle uint32) (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	nErrInt := int(C.AdsSyncDelDeviceNotificationReq(
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(handle)))
-
+	adsLock.Unlock()
 	if nErrInt != 0 {
 		err = fmt.Errorf("Del Notification Error %d", nErrInt)
 	}
@@ -482,13 +453,12 @@ func (conn *Connection) adsSyncDelDeviceNotificationReq(handle uint32) (err erro
 }
 
 func (conn *Connection) adsSyncDelDeviceNotificationReqEx(handle uint32) (err error) {
-	lock.Lock()
-	defer lock.Unlock()
+	adsLock.Lock()
 	nErrInt := int(C.AdsSyncDelDeviceNotificationReqEx(
 		C.long(conn.port),
 		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
 		C.ulong(handle)))
-
+	adsLock.Unlock()
 	if nErrInt != 0 {
 		err = fmt.Errorf("Del Notification Error %d", nErrInt)
 	}
@@ -501,13 +471,15 @@ func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
 		node.ChangedHandlers[0] = function
 		return
 	}
+	lock.Lock()
 	node.ChangedHandlers = append(node.ChangedHandlers, function)
+	lock.Unlock()
 }
 
 func (node *ADSSymbol) getHandle() (err error) {
 	var handle uint32
 	if node.Handle != 0 {
-		handle = node.Handle
+		return
 	} else {
 		handleData, err := node.Connection.adsSyncReadWriteReq(
 			ADSIGRP_SYM_HNDBYNAME,
@@ -518,11 +490,10 @@ func (node *ADSSymbol) getHandle() (err error) {
 			return err
 		}
 		handle = binary.LittleEndian.Uint32(handleData)
-
-		// node.Connection.handles[handle] = node
-		node.Connection.handles.Store(handle, node)
-
+		lock.Lock()
 		node.Handle = handle
+		node.Connection.handles[handle] = node
+		lock.Unlock()
 	}
 	return err
 }
@@ -532,7 +503,6 @@ func (conn *Connection) getValueByHandle(handle uint32, size uint32) (data []byt
 		ADSIGRP_SYM_VALBYHND,
 		uint32(handle),
 		uint32(size))
-
 	return data, err
 }
 
@@ -544,21 +514,54 @@ func (conn *Connection) releaseHandle(handle uint32) (err error) {
 		0x0,
 		a)
 	if err != nil {
-		conn.handles.Delete(handle)
-		// delete(conn.handles, handle)
+		delete(conn.handles, handle)
+		// conn.handles.Delete(handle)
 		fmt.Println("handle deleted ", handle)
 	}
 	return
-
 }
 
 func (conn *Connection) releasNotificationeHandle(handle uint32) (err error) {
 	conn.adsSyncDelDeviceNotificationReq(handle)
 	if err != nil {
-		conn.notificationHandles.Delete(handle)
-		// delete(conn.notificationHandles, handle)
+		delete(conn.notificationHandles, handle)
 		fmt.Println("notification handle deleted ", handle)
 	}
 	return
+}
 
+func (conn *Connection) AdsSyncReadStateReq() (adsState int, deviceState int, err error) {
+	cAdsState := C.ushort(0)
+	cDeviceState := C.ushort(0)
+	adsLock.Lock()
+	nErr := C.AdsSyncReadStateReq(
+		(*C.AmsAddr)(unsafe.Pointer(conn.addr)),
+		&cAdsState,
+		&cDeviceState)
+	adsLock.Unlock()
+	if nErr != 0 {
+		return 0, 0, fmt.Errorf("Error ", nErr)
+	}
+	return int(cAdsState), int(cDeviceState), nil
+}
+
+func RegisterRouterNotification(callback func(int)) (err error) {
+	adsLock.Lock()
+	C.AdsAmsRegisterRouterNotification(
+		(C.PAmsRouterNotificationFuncEx)(C.routerNotificationFun),
+	)
+	adsLock.Unlock()
+	return
+}
+
+func UnregisterRouterNotification() (err error) {
+	adsLock.Lock()
+	C.AdsAmsUnRegisterRouterNotification()
+	adsLock.Unlock()
+	return
+}
+
+//export routerNotificationFun
+func routerNotificationFun(response C.long) {
+	RouterNotification(int(response))
 }

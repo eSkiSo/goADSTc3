@@ -256,3 +256,9 @@ type AdsSymbolInfoByName struct {
 	IndexOffset uint32
 	CbLength    uint32
 }
+
+const (
+	AMSEVENT_ROUTERSTOP    = 0
+	AMSEVENT_ROUTERSTART   = 1
+	AMSEVENT_ROUTERREMOVED = 2
+)

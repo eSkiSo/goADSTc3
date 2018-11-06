@@ -106,8 +106,7 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 
 	}
 
-	// conn.Symbols[symbol.Name] = sym
-	conn.Symbols.Store(symbol.Name, sym)
+	conn.Symbols[symbol.Name] = sym
 	// for _, child := range sym.Childs {
 	// 	conn.Symbols[child.FullName] = *child
 	// }
@@ -154,9 +153,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		}
 
 		childs[key] = &child
-		//fmt.Println(child.FullName)
-		// child.Connection.Symbols[child.FullName] = childs[key]
-		child.Connection.Symbols.Store(child.FullName, childs[key])
+		child.Connection.Symbols[child.FullName] = &child
 	}
 
 	return

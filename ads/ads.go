@@ -10,15 +10,33 @@ import (
 )
 
 var portOpen bool
+var RouterNotification func(response int)
+
+type AdsSyncMap struct {
+	sync.Map
+}
+
+func (testMap *AdsSyncMap) Empty() bool {
+	var count int
+	testMap.Range(func(k, v interface{}) bool {
+		count++
+		return false
+	})
+	if count > 0 {
+		return false
+	}
+	return true
+}
 
 type Connection struct {
-	addr                *AmsAddr
-	port                int
-	symbolsLoaded       bool
-	Symbols             sync.Map // map[string]*ADSSymbol
+	addr          *AmsAddr
+	port          int
+	symbolsLoaded bool
+
+	Symbols             map[string]*ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
-	handles             sync.Map // map[uint32]*ADSSymbol
-	notificationHandles sync.Map // map[uint32]*ADSSymbol
+	handles             map[uint32]*ADSSymbol
+	notificationHandles map[uint32]*ADSSymbol
 	// notificationHandles sync.map
 }
 
@@ -48,9 +66,11 @@ type ADSSymbol struct {
 }
 
 var lock *sync.RWMutex
+var adsLock *sync.Mutex
 
 func init() {
 	lock = &sync.RWMutex{}
+	adsLock = &sync.Mutex{}
 }
 
 func AddLocalConnection() (conn *Connection, err error) {
@@ -82,7 +102,7 @@ func AddLocalConnection() (conn *Connection, err error) {
 }
 
 func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error) {
-
+	fmt.Println("local package")
 	localConnection := Connection{}
 	open, err := adsAmsPortEnabled()
 	if !open {
@@ -93,7 +113,15 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 	}
 	localConnection.addr = &AmsAddr{}
 	localConnection.setRemoteAddress(netID)
-	fmt.Printf("remote connection at %d %d %d \n", localConnection.port, localConnection.addr.Port, localConnection.addr.NetId.B[0])
+	fmt.Printf("remote connection at %d %d %d %d %d %d\n",
+		localConnection.port,
+		localConnection.addr.Port,
+		localConnection.addr.NetId.B[0],
+		localConnection.addr.NetId.B[1],
+		localConnection.addr.NetId.B[2],
+		localConnection.addr.NetId.B[3],
+		localConnection.addr.NetId.B[4],
+		localConnection.addr.NetId.B[5])
 	localConnection.addr.Port = port
 
 	localConnection.initializeConnection()
@@ -127,10 +155,10 @@ func (localConnection *Connection) initializeConnVariables() error {
 }
 
 func (localConnection *Connection) initializeConnection() {
-	// localConnection.Symbols = map[string]*ADSSymbol{}
+	localConnection.Symbols = map[string]*ADSSymbol{}
 	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
-	// localConnection.handles = map[uint32]*ADSSymbol{}
-	// localConnection.notificationHandles = map[uint32]*ADSSymbol{}
+	localConnection.handles = map[uint32]*ADSSymbol{}
+	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
 }
 
 // CloseAllConnections closes open connections
@@ -146,15 +174,14 @@ func CloseAllConnections() {
 
 // CloseConnection closes current connection
 func (localConnection *Connection) CloseConnection() {
-	localConnection.handles.Range(func(k, v interface{}) bool {
-		err := localConnection.releaseHandle(k.(uint32))
+	for k := range localConnection.handles {
+		err := localConnection.releaseHandle(uint32(k))
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("deleted handle %d", k)
 		}
-		return true
-	})
+	}
 	// for k := range localConnection.notificationHandles {
 	// 	err := localConnection.releasNotificationeHandle(k)
 	// 	if err != nil {
@@ -163,15 +190,14 @@ func (localConnection *Connection) CloseConnection() {
 	// 		fmt.Printf("deleted notification handle %d", k)
 	// 	}
 	// }
-	localConnection.notificationHandles.Range(func(k, v interface{}) bool {
-		err := localConnection.releasNotificationeHandle(k.(uint32))
+	for k := range localConnection.notificationHandles {
+		err := localConnection.releasNotificationeHandle(uint32(k))
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("deleted notification handle %d", k)
 		}
-		return true
-	})
+	}
 	return
 }
 
@@ -184,10 +210,9 @@ func showComments(info *ADSSymbolUploadDataType) {
 
 func showInfoComments(info *ADSSymbol) {
 	fmt.Println(info.Name)
-	for _, value := range info.Childs {
-		showInfoComments(value)
+	for _, v := range info.Childs {
+		showInfoComments(v)
 	}
-
 }
 
 // AddNotification adds event notification to handle
@@ -208,9 +233,9 @@ func (node *ADSSymbol) GetStringValue() (value string, err error) {
 		node.Handle,
 		node.Length)
 	if err != nil {
+		node.Handle = 0
 		return "", err
 	}
-
 	node.parse(data, 0)
 	return node.Value, err
 }
@@ -261,7 +286,7 @@ func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
 		for _, child := range node.Childs {
 			if onlyChanged {
 				if child.Changed {
-					var re = regexp.MustCompile(`\[`)
+					re := regexp.MustCompile(`\[`)
 					s := re.ReplaceAllString(child.Name, `"[`)
 					re = regexp.MustCompile(`\]`)
 					s = re.ReplaceAllString(s, `]"`)
@@ -269,7 +294,7 @@ func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
 					// child.Changed = false
 				}
 			} else {
-				var re = regexp.MustCompile(`\[`)
+				re := regexp.MustCompile(`\[`)
 				s := re.ReplaceAllString(child.Name, `"[`)
 				re = regexp.MustCompile(`\]`)
 				s = re.ReplaceAllString(s, `]"`)
@@ -279,13 +304,5 @@ func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
 		rData = localMap
 		return
 	}
-	// if node.Parent == nil {
-	// 	tempData := make(map[string]interface{})
-	// 	tempData[node.Name] = rData
-	// 	rData = tempData
-	// }
 	return
 }
-
-// 	return
-// }

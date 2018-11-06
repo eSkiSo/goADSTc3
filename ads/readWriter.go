@@ -14,17 +14,11 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 	start := offset
 	stop := start + int(dt.Length)
 
-	if dt.Childs != nil {
+	if len(dt.Childs) > 0 {
 		for _, value := range dt.Childs {
 			value.parse(data[offset:stop], int(value.Offset))
 		}
-	}
-	// for i := range dt.Childs {
-
-	// 	dt.Childs[i].Self.parse(data)
-	// }
-
-	if len(dt.Childs) == 0 {
+	} else {
 		var newValue = "nil"
 
 		if len(data) < int(dt.Length) {
@@ -140,14 +134,16 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 		default:
 			newValue = "nil"
 		}
-
 		if strcmp(dt.Value, newValue) != 0 &&
 			time.Now().UnixNano()-dt.LastUpdateTime > dt.MinUpdateInterval {
+			lock.Lock()
 			dt.LastUpdateTime = time.Now().UnixNano()
 			dt.Value = newValue
 			dt.Valid = true
 			dt.Changed = true
+			lock.Unlock()
 			dt.updateChanged(true)
+
 			//fmt.Println(dt.FullName, dt.Value)
 		}
 
@@ -155,16 +151,17 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 }
 
 func (dt *ADSSymbol) updateChanged(value bool) {
+	lock.Lock()
 	dt.Changed = value
+	lock.Unlock()
 	if dt.Parent != nil {
 		dt.Parent.updateChanged(value)
 	}
 }
 
-func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) { /*{{{*/
-	// log.Warn("Write (", symbol.Area, ":", symbol.Offset, "): ", symbol.Name)
+func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 
-	if len(symbol.Childs) != 0 {
+	if len(symbol.Childs) > 0 {
 		err = fmt.Errorf("Cannot write to a whole struct at once!")
 		return
 	}
@@ -283,9 +280,6 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) { /*{
 		return
 	}
 	symbol.writeBuffArray(buf.Bytes())
-	// set
-	//symbol.Self.conn.Write(symbol.Area, symbol.Offset, buf.Bytes())
-
 	return nil
 
 }
