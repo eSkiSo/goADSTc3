@@ -174,28 +174,20 @@ func CloseAllConnections() {
 
 // CloseConnection closes current connection
 func (localConnection *Connection) CloseConnection() {
-	for k := range localConnection.handles {
-		err := localConnection.releaseHandle(uint32(k))
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			fmt.Printf("deleted handle %d", k)
-		}
-	}
-	// for k := range localConnection.notificationHandles {
-	// 	err := localConnection.releasNotificationeHandle(k)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 	} else {
-	// 		fmt.Printf("deleted notification handle %d", k)
-	// 	}
-	// }
 	for k := range localConnection.notificationHandles {
 		err := localConnection.releasNotificationeHandle(uint32(k))
 		if err != nil {
 			fmt.Println(err)
 		} else {
 			fmt.Printf("deleted notification handle %d", k)
+		}
+	}
+	for k := range localConnection.handles {
+		err := localConnection.releaseHandle(uint32(k))
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("deleted handle %d", k)
 		}
 	}
 	return

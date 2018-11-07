@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"gitlab.com/xilix-systems-llc/go-native-ads/ads"
+	"gitlab.com/xilix-systems-llc/go-native-ads/v2/ads"
 )
 
 func main() {

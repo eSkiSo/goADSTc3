@@ -276,7 +276,6 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 		newValue = t.Truncate(time.Millisecond).Format("2006-01-02 15:04:05")*/
 	default:
 		err = fmt.Errorf("Datatype '%s' write is not implemented yet!", symbol.DataType)
-
 		return
 	}
 	symbol.writeBuffArray(buf.Bytes())

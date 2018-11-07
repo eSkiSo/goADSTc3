@@ -514,8 +514,7 @@ func (conn *Connection) releaseHandle(handle uint32) (err error) {
 		0x0,
 		a)
 	if err != nil {
-		delete(conn.handles, handle)
-		// conn.handles.Delete(handle)
+		// conn.handles[handle].Handle = 0
 		fmt.Println("handle deleted ", handle)
 	}
 	return
@@ -524,7 +523,7 @@ func (conn *Connection) releaseHandle(handle uint32) (err error) {
 func (conn *Connection) releasNotificationeHandle(handle uint32) (err error) {
 	conn.adsSyncDelDeviceNotificationReq(handle)
 	if err != nil {
-		delete(conn.notificationHandles, handle)
+		// conn.notificationHandles[handle].NotificationHandle = 0
 		fmt.Println("notification handle deleted ", handle)
 	}
 	return
