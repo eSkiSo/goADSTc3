@@ -31,7 +31,7 @@ func (testMap *AdsSyncMap) Empty() bool {
 type Connection struct {
 	addr          *AmsAddr
 	port          int
-	symbolsLoaded bool
+	SymbolsLoaded bool
 
 	Symbols             map[string]*ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
