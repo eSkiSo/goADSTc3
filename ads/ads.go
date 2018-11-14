@@ -151,6 +151,7 @@ func (localConnection *Connection) initializeConnVariables() error {
 		return err
 	}
 	fmt.Println("uploadSymbolInfoSymbols  loaded")
+	localConnection.SymbolsLoaded := true
 	return err
 }
 
