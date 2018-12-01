@@ -72,7 +72,9 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	}
 	if changed {
 		for _, callback := range variable.ChangedHandlers {
+			lock.Lock()
 			callback(*variable)
+			lock.Unlock()
 		}
 	}
 	variable.clearNodeChangedFlag()
