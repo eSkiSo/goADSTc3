@@ -63,6 +63,7 @@ type ADSSymbol struct {
 
 	Parent *ADSSymbol
 	Childs map[string]*ADSSymbol
+	Lock   *sync.Mutex
 }
 
 var lock *sync.RWMutex

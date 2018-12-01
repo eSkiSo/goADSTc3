@@ -137,10 +137,12 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 		if strcmp(dt.Value, newValue) != 0 &&
 			time.Now().UnixNano()-dt.LastUpdateTime > dt.MinUpdateInterval {
 			lock.Lock()
+			dt.Lock.Lock()
 			dt.LastUpdateTime = time.Now().UnixNano()
 			dt.Value = newValue
 			dt.Valid = true
 			dt.Changed = true
+			dt.Lock.Unlock()
 			lock.Unlock()
 			dt.updateChanged(true)
 
@@ -152,7 +154,9 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 
 func (dt *ADSSymbol) updateChanged(value bool) {
 	lock.Lock()
+	dt.Lock.Lock()
 	dt.Changed = value
+	dt.Lock.Unlock()
 	lock.Unlock()
 	if dt.Parent != nil {
 		dt.Parent.updateChanged(value)
@@ -278,7 +282,9 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 		err = fmt.Errorf("Datatype '%s' write is not implemented yet!", symbol.DataType)
 		return
 	}
+	dt.Lock.Lock()
 	symbol.writeBuffArray(buf.Bytes())
+	dt.Lock.Unlock()
 	return nil
 
 }

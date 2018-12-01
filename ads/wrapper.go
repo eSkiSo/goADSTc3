@@ -73,7 +73,9 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	if changed {
 		for _, callback := range variable.ChangedHandlers {
 			lock.Lock()
+			variable.Lock.Lock()
 			callback(*variable)
+			variable.Lock.Unlock()
 			lock.Unlock()
 		}
 	}
@@ -82,7 +84,9 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
 	lock.Lock()
+	node.Lock.Lock()
 	node.Changed = false
+	node.Lock.Unlock()
 	lock.Unlock()
 	for _, child := range node.Childs {
 		child.clearNodeChangedFlag()
