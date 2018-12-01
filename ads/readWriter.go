@@ -282,9 +282,9 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 		err = fmt.Errorf("Datatype '%s' write is not implemented yet!", symbol.DataType)
 		return
 	}
-	dt.Lock.Lock()
+	symbol.Lock.Lock()
 	symbol.writeBuffArray(buf.Bytes())
-	dt.Lock.Unlock()
+	symbol.Lock.Unlock()
 	return nil
 
 }
