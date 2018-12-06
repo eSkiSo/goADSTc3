@@ -74,9 +74,9 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	}
 	if changed {
 		for _, callback := range variable.ChangedHandlers {
-			lock.Lock()
+			variable.Lock.Lock()
 			callback(*variable)
-			lock.Unlock()
+			variable.Lock.Unlock()
 		}
 	}
 	variable.clearNodeChangedFlag()
@@ -84,7 +84,9 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
 	lock.Lock()
+	node.Lock.Lock()
 	node.Changed = false
+	node.Lock.Unlock()
 	lock.Unlock()
 	for _, child := range node.Childs {
 		child.clearNodeChangedFlag()
@@ -494,10 +496,10 @@ func (node *ADSSymbol) getHandle() (err error) {
 			return err
 		}
 		handle = binary.LittleEndian.Uint32(handleData)
-		lock.Lock()
+		node.Lock.Lock()
 		node.Handle = handle
 		node.Connection.handles[handle] = node
-		lock.Unlock()
+		node.Lock.Unlock()
 	}
 	return err
 }
