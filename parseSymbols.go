@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"time"
 	"unsafe"
 )
 
@@ -26,7 +27,7 @@ type ADSSymbolUploadSymbol struct {
 }
 
 func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
-	data, err := conn.adsSyncReadReq(
+	data, err := conn.adsSyncReadReqEx2(
 		ADSIGRP_SYM_UPLOADINFO2,
 		0x0,
 		uint32(unsafe.Sizeof(uploadInfo)))
@@ -36,7 +37,7 @@ func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, 
 }
 
 func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
-	res, err := conn.adsSyncReadReq(ADSIGRP_SYM_UPLOAD, 0, length)
+	res, err := conn.adsSyncReadReqEx2(ADSIGRP_SYM_UPLOAD, 0, length)
 	if err != nil {
 		return err
 	}
@@ -89,6 +90,7 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 	sym.Connection = conn
 	sym.Self = sym
 	sym.Name = symbol.Name
+	sym.LastUpdateTime = time.Now()
 	sym.FullName = symbol.Name
 	sym.DataType = symbol.DataType
 	sym.Comment = symbol.Comment
@@ -160,7 +162,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 }
 
 func (conn *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
-	data, errInt := conn.adsSyncReadReq(
+	data, errInt := conn.adsSyncReadReqEx2(
 		ADSIGRP_SYM_DT_UPLOAD,
 		0x0,
 		length)

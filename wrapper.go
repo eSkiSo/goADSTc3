@@ -53,41 +53,46 @@ func adsAmsPortEnabled() (bool, error) {
 	return bool(portOpen), nil
 }
 
+var locker uint32
+
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
+
+	lock.Lock()
 	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
 	connection := getConnectionFromAddress(*goAmsAddr)
-	lock.Lock()
 	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
+
 	if !ok {
 		fmt.Println(notification.hNotification)
 		return
 	}
-	lock.Unlock()
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
 	variable.parse(cBytes, 0)
-	changed := false
-	if len(variable.Childs) == 0 {
-		changed = true
-	} else {
-		changed = variable.isNodeChanged()
-	}
-	if changed {
-		for _, callback := range variable.ChangedHandlers {
-			variable.Lock.Lock()
-			callback(*variable)
-			variable.Lock.Unlock()
+	// changed := false
+	// if len(variable.Childs) == 0 {
+	// 	changed = true
+	// } else {
+	// 	changed = variable.isNodeChanged()
+	// }
+	lock.Unlock()
+
+	if variable.Changed || true {
+		// for _, callback := range variable.ChangedHandlers {
+		// 	callback(*variable)
+		// }
+		value, _ := variable.GetJSON(true)
+		for _, callback := range variable.ChangedChannel {
+			callback <- ChangedRepsonse{Variable: variable.Name, Value: value}
 		}
 	}
+	lock.Lock()
 	variable.clearNodeChangedFlag()
+	lock.Unlock()
 }
 
 func (node *ADSSymbol) clearNodeChangedFlag() {
-	lock.Lock()
-	node.Lock.Lock()
 	node.Changed = false
-	node.Lock.Unlock()
-	lock.Unlock()
 	for _, child := range node.Childs {
 		child.clearNodeChangedFlag()
 	}
@@ -130,7 +135,7 @@ func adsPortOpenEx() (port int) {
 	adsLock.Lock()
 	port = int(C.AdsPortOpenEx())
 	adsLock.Unlock()
-	return
+	return port
 }
 
 func adsPortClose() (err error) {
@@ -238,7 +243,7 @@ func (conn *Connection) adsSyncReadReq(group uint32, offset uint32, length uint3
 		unsafe.Pointer(cDataToRead)))
 	adsLock.Unlock()
 	if errInt != 0 {
-		err = fmt.Errorf("Error adsSyncReadReq")
+		err = fmt.Errorf("Error adsSyncReadReq: " + strconv.Itoa(errInt))
 		return data, err
 	}
 	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(length))
@@ -279,9 +284,9 @@ func (conn *Connection) adsSyncReadReqEx2(group uint32, offset uint32, length ui
 		unsafe.Pointer(cData),
 		&amountOfDataReturned))
 	adsLock.Unlock()
-	fmt.Println("amount of data returned", amountOfDataReturned)
+	// fmt.Println("amount of data returned", amountOfDataReturned)
 	data = C.GoBytes(unsafe.Pointer(cData), C.int(amountOfDataReturned))
-	fmt.Println(errInt)
+	//fmt.Println(errInt)
 	if errInt != 0 {
 		err = fmt.Errorf("Error adsSyncReadReqEx", errInt)
 	}
@@ -292,7 +297,7 @@ func (node *ADSSymbol) writeBuffArray(data []byte) {
 	if node.Handle == 0 {
 		node.getHandle()
 	}
-	node.Connection.adsSyncWriteReq(
+	node.Connection.adsSyncWriteReqEx(
 		ADSIGRP_SYM_VALBYHND,
 		uint32(node.Handle),
 		data)
@@ -398,8 +403,8 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 	fmt.Println("handle for notification", handle)
 	fmt.Println("error for notification", nErrInt)
 
-	node.NotificationHandle = handle
 	lock.Lock()
+	node.NotificationHandle = handle
 	node.Connection.notificationHandles[node.NotificationHandle] = node
 	lock.Unlock()
 
@@ -437,9 +442,10 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDe
 	handle = uint32(hNotification)
 	fmt.Println("handle for notification", handle)
 	fmt.Println("error for notification", nErrInt)
-
+	lock.Lock()
 	node.NotificationHandle = handle
 	node.Connection.notificationHandles[node.NotificationHandle] = node
+	lock.Unlock()
 	fmt.Println(nErrInt)
 	fmt.Println(node.FullName)
 	fmt.Println(node.NotificationHandle)
@@ -482,30 +488,55 @@ func (node *ADSSymbol) addCallback(function func(ADSSymbol)) {
 	lock.Unlock()
 }
 
+func (node *ADSSymbol) addCallbackChannel(function chan ChangedRepsonse) {
+	if node.ChangedChannel == nil {
+		lock.Lock()
+		node.ChangedChannel = make([]chan ChangedRepsonse, 1)
+		node.ChangedChannel[0] = function
+		lock.Unlock()
+		return
+	}
+	lock.Lock()
+	node.ChangedChannel = append(node.ChangedChannel, function)
+	lock.Unlock()
+}
+
+func (node *ADSSymbol) addRepsoneChannel(response chan ChangedRepsonse) {
+	if node.ChangedChannel == nil {
+		node.ChangedChannel = make([]chan ChangedRepsonse, 1)
+		node.ChangedChannel[0] = response
+		return
+	}
+	lock.Lock()
+	node.ChangedChannel = append(node.ChangedChannel, response)
+	lock.Unlock()
+}
+
 func (node *ADSSymbol) getHandle() (err error) {
 	var handle uint32
 	if node.Handle != 0 {
 		return
-	} else {
-		handleData, err := node.Connection.adsSyncReadWriteReq(
-			ADSIGRP_SYM_HNDBYNAME,
-			0x0,
-			uint32(unsafe.Sizeof(handle)),
-			[]byte(node.FullName))
-		if err != nil {
-			return err
-		}
-		handle = binary.LittleEndian.Uint32(handleData)
-		node.Lock.Lock()
-		node.Handle = handle
-		node.Connection.handles[handle] = node
-		node.Lock.Unlock()
 	}
+
+	handleData, err := node.Connection.adsSyncReadWriteReqEx2(
+		ADSIGRP_SYM_HNDBYNAME,
+		0x0,
+		uint32(unsafe.Sizeof(handle)),
+		[]byte(node.FullName))
+	if err != nil {
+		return err
+	}
+	handle = binary.LittleEndian.Uint32(handleData)
+	lock.Lock()
+	node.Handle = handle
+	node.Connection.handles[handle] = node
+	lock.Unlock()
+
 	return err
 }
 
 func (conn *Connection) getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
-	data, err = conn.adsSyncReadReq(
+	data, err = conn.adsSyncReadReqEx2(
 		ADSIGRP_SYM_VALBYHND,
 		uint32(handle),
 		uint32(size))
@@ -515,7 +546,7 @@ func (conn *Connection) getValueByHandle(handle uint32, size uint32) (data []byt
 func (conn *Connection) releaseHandle(handle uint32) (err error) {
 	a := make([]byte, 4)
 	binary.LittleEndian.PutUint32(a, uint32(handle))
-	err = conn.adsSyncWriteReq(
+	err = conn.adsSyncWriteReqEx(
 		ADSIGRP_SYM_RELEASEHND,
 		0x0,
 		a)
@@ -527,7 +558,7 @@ func (conn *Connection) releaseHandle(handle uint32) (err error) {
 }
 
 func (conn *Connection) releasNotificationeHandle(handle uint32) (err error) {
-	conn.adsSyncDelDeviceNotificationReq(handle)
+	conn.adsSyncDelDeviceNotificationReqEx(handle)
 	if err != nil {
 		// conn.notificationHandles[handle].NotificationHandle = 0
 		fmt.Println("notification handle deleted ", handle)

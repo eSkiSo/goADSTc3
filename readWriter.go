@@ -134,14 +134,12 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 		default:
 			newValue = "nil"
 		}
-		if strcmp(dt.Value, newValue) != 0 &&
-			time.Now().UnixNano()-dt.LastUpdateTime > dt.MinUpdateInterval {
-			dt.Lock.Lock()
-			dt.LastUpdateTime = time.Now().UnixNano()
+		if strcmp(dt.Value, newValue) != 0 ||
+			time.Since(dt.LastUpdateTime) > dt.MinUpdateInterval {
+			dt.LastUpdateTime = time.Now()
 			dt.Value = newValue
 			dt.Valid = true
 			dt.Changed = true
-			dt.Lock.Unlock()
 			dt.updateChanged(true)
 
 			//fmt.Println(dt.FullName, dt.Value)
@@ -151,16 +149,13 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 }
 
 func (dt *ADSSymbol) updateChanged(value bool) {
-	dt.Lock.Lock()
 	dt.Changed = value
-	dt.Lock.Unlock()
 	if dt.Parent != nil {
 		dt.Parent.updateChanged(value)
 	}
 }
 
 func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
-
 	if len(symbol.Childs) > 0 {
 		err = fmt.Errorf("Cannot write to a whole struct at once!")
 		return
@@ -278,11 +273,8 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 		err = fmt.Errorf("Datatype '%s' write is not implemented yet!", symbol.DataType)
 		return
 	}
-	symbol.Lock.Lock()
 	symbol.writeBuffArray(buf.Bytes())
-	symbol.Lock.Unlock()
 	return nil
-
 }
 
 func strcmp(a, b string) int {

@@ -40,22 +40,26 @@ type Connection struct {
 	// notificationHandles sync.map
 }
 
+type ChangedRepsonse struct {
+	Variable string
+	Value    string
+}
 type ADSSymbol struct {
 	Connection         *Connection
 	Self               *ADSSymbol
 	FullName           string
-	LastUpdateTime     int64
-	MinUpdateInterval  int64
+	LastUpdateTime     time.Time
+	MinUpdateInterval  time.Duration
 	Name               string
 	DataType           string
 	Comment            string
 	Handle             uint32
 	NotificationHandle uint32
 	ChangedHandlers    []func(ADSSymbol) // Fix: doesn't allow change values
-
-	Group  uint32
-	Offset uint32
-	Length uint32
+	ChangedChannel     []chan ChangedRepsonse
+	Group              uint32
+	Offset             uint32
+	Length             uint32
 
 	Value   string
 	Valid   bool
@@ -63,7 +67,6 @@ type ADSSymbol struct {
 
 	Parent *ADSSymbol
 	Childs map[string]*ADSSymbol
-	Lock   *sync.Mutex
 }
 
 var lock *sync.RWMutex
@@ -107,7 +110,8 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 	localConnection := Connection{}
 	open, err := adsAmsPortEnabled()
 	if !open {
-		adsPortOpen()
+		localConnection.port = adsPortOpenEx()
+		fmt.Println(localConnection.port)
 	}
 	if err != nil {
 		return nil, err
@@ -133,6 +137,7 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
+	go conn.notificationPump()
 	return conn, err
 }
 
@@ -167,11 +172,15 @@ func (localConnection *Connection) initializeConnection() {
 func CloseAllConnections() {
 	for _, conn := range connections {
 		conn.CloseConnection()
+		err := adsPortCloseEx(conn.port)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		log.Println("Closed")
+
 	}
-	err := adsPortClose()
-	if err != nil {
-		log.Println(err)
-	}
+
 }
 
 // CloseConnection closes current connection
@@ -181,7 +190,7 @@ func (localConnection *Connection) CloseConnection() {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Printf("deleted notification handle %d", k)
+			fmt.Println("deleted notification handle %d", k)
 		}
 	}
 	for k := range localConnection.handles {
@@ -189,7 +198,7 @@ func (localConnection *Connection) CloseConnection() {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Printf("deleted handle %d", k)
+			fmt.Println("deleted handle %d", k)
 		}
 	}
 	return
@@ -211,18 +220,48 @@ func showInfoComments(info *ADSSymbol) {
 
 // AddNotification adds event notification to handle
 func (node *ADSSymbol) AddNotification(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback func(ADSSymbol)) {
-	node.adsSyncAddDeviceNotificationReq(mode, uint32(maxTime), uint32(cycleTime))
+	node.adsSyncAddDeviceNotificationReqEx(mode, uint32(maxTime), uint32(cycleTime))
 	node.addCallback(callback)
+}
+
+func (node *ADSSymbol) AddNotificationChannel(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback chan ChangedRepsonse) {
+	node.adsSyncAddDeviceNotificationReqEx(mode, uint32(maxTime), uint32(cycleTime))
+	node.addCallbackChannel(callback)
+}
+
+var index uint32
+
+// AddResponseChannel adds event notification to handle
+func (node *ADSSymbol) AddResponseChannel(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback chan ChangedRepsonse) {
+	node.MinUpdateInterval = time.Millisecond * 100
+	node.Connection.notificationHandles[index] = node
+	index++
+	node.addRepsoneChannel(callback)
+}
+
+func (localConnection *Connection) notificationPump() {
+	for {
+		for _, variable := range localConnection.notificationHandles {
+			if time.Since(variable.LastUpdateTime) > variable.MinUpdateInterval {
+				value, _ := variable.GetJSON(false)
+				for _, callback := range variable.ChangedChannel {
+					callback <- ChangedRepsonse{Variable: variable.FullName, Value: value}
+				}
+			}
+		}
+	}
 }
 
 // GetStringValue returns value from PLC in string format
 func (node *ADSSymbol) GetStringValue() (value string, err error) {
+
 	if node.Handle == 0 {
 		err = node.getHandle()
 	}
 	if err != nil {
 		return "", err
 	}
+	lock.Lock()
 	data, err := node.Connection.getValueByHandle(
 		node.Handle,
 		node.Length)
@@ -231,6 +270,7 @@ func (node *ADSSymbol) GetStringValue() (value string, err error) {
 		return "", err
 	}
 	node.parse(data, 0)
+	lock.Unlock()
 	return node.Value, err
 }
 
@@ -251,10 +291,13 @@ func (node *ADSSymbol) GetJSON(onlyChanged bool) (string, error) {
 	}
 	// data := make(map[string]interface{})
 	// data[node.FullName] = node.parseNode(onlyChanged)
+	lock.RLock()
+	defer lock.RUnlock()
 	data := node.parseNode(onlyChanged)
 	if jsonData, err := json.Marshal(data); err == nil {
 		return string(jsonData), nil
 	}
+
 	return "", nil
 }
 
