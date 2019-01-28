@@ -137,7 +137,7 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
-	go conn.notificationPump()
+
 	return conn, err
 }
 
@@ -216,6 +216,10 @@ func showInfoComments(info *ADSSymbol) {
 	for _, v := range info.Childs {
 		showInfoComments(v)
 	}
+}
+
+func (localConnection *Connection) BeginNotifcations() {
+	go localConnection.notificationPump()
 }
 
 // AddNotification adds event notification to handle
