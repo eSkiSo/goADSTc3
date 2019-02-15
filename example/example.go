@@ -5,24 +5,54 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"gitlab.com/xilix-systems-llc/go-native-ads/v2/ads"
+	ads "gitlab.com/xilix-systems-llc/go-native-ads"
 )
 
 func main() {
-
-	address, _ := ads.AddLocalConnection()
-	fmt.Print("here1")
-	ads.RouterNotification = routerNotificatin
-	fmt.Print("here2")
-	ads.RegisterRouterNotification(routerNotificatin)
-	fmt.Print("here3")
-	// variable, _ := address.Symbols.Load("GVL.TakePicture")
-	fmt.Print("here")
-	a, b, _ := address.AdsSyncReadStateReq()
-	fmt.Printf("a %f b: %f", a, b)
-	// variable.(*ads.ADSSymbol).AddNotification(4, time.Millisecond*100, time.Millisecond*100, sendJSON)
-	fmt.Print("again")
+	lastTimes := make(map[string]time.Time)
+	address, _ := ads.AddRemoteConnection("10.0.1.158.1.1", 851)
+	go func() {
+		for {
+			select {
+			case response := <-address.Notification:
+				lastTime, ok := lastTimes[response.Variable]
+				if !ok {
+					lastTime = response.TimeStamp
+					lastTimes[response.Variable] = lastTime
+				}
+				//fmt.Printf("Value %s Timespan %v\n", response.Value, lastTime)
+				lastTimes[response.Variable] = response.TimeStamp
+				fmt.Printf("Value %s Timespan %v\n", response.Value, lastTime)
+			}
+		}
+	}()
+	// go func() {
+	// 	for {
+	// 		// address.Read <- "MAIN.i"
+	// 		// <-address.ReadResponse
+	// 	}
+	// }()
+	// go func() {
+	// 	for {
+	// 		// address.Write <- ads.WriteStruct{Variable: "MAIN.i.i", Value: "0"}
+	// 		// time.Sleep(time.Millisecond * 500)
+	// 	}
+	// }()
+	// go func() {
+	// 	blargh := 1
+	// 	for {
+	// 		blargh *= 25
+	// 		//fmt.Printf("writing blargh: %d\n", blargh)
+	// 		// address.Write <- ads.WriteStruct{Variable: "MAIN.i.c", Value: strconv.Itoa(blargh)}
+	// 		if blargh > math.MaxInt8 {
+	// 			blargh = 1
+	// 		}
+	// 		time.Sleep(time.Millisecond * 200)
+	// 	}
+	// }()
+	address.AddNotification <- "GVL.AllAlarms"
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, syscall.SIGTERM)
@@ -37,14 +67,4 @@ func main() {
 
 func routerNotificatin(response int) {
 	fmt.Print(response)
-}
-
-func sendJSON(symbol ads.ADSSymbol) {
-	// fmt.Println("Callback", symbol.Name, symbol.Value)
-	jsonReturn, err := symbol.GetJSON(true)
-	if err == nil {
-		fmt.Println(string(jsonReturn))
-	} else {
-		fmt.Println(err)
-	}
 }

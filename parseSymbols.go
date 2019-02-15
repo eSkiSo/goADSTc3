@@ -91,6 +91,7 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 	sym.Self = sym
 	sym.Name = symbol.Name
 	sym.LastUpdateTime = time.Now()
+	sym.MinUpdateInterval = time.Millisecond * 50
 	sym.FullName = symbol.Name
 	sym.DataType = symbol.DataType
 	sym.Comment = symbol.Comment
@@ -105,10 +106,8 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 	if ok {
 		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 		sym.Childs = dt.addOffset(sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
-
 	}
-
-	conn.Symbols[symbol.Name] = sym
+	conn.symbols[symbol.Name] = sym
 	// for _, child := range sym.Childs {
 	// 	conn.Symbols[child.FullName] = *child
 	// }
@@ -131,8 +130,9 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		child := ADSSymbol{}
 		child.Self = &child
 		child.Connection = parent.Connection
-
 		child.Name = segment.Name
+		child.LastUpdateTime = time.Now()
+		child.MinUpdateInterval = time.Millisecond * 50
 		child.FullName = path
 		child.DataType = segment.DataType
 		child.Comment = segment.Comment
@@ -155,7 +155,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		}
 
 		childs[key] = &child
-		child.Connection.Symbols[child.FullName] = &child
+		child.Connection.symbols[child.FullName] = &child
 	}
 
 	return
@@ -167,7 +167,7 @@ func (conn *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
 		0x0,
 		length)
 	if errInt != nil {
-		err = fmt.Errorf("error doing DT UPLOAD %v", err)
+		err = fmt.Errorf("error doing DT UPLOAD %d\n", err)
 	}
 	buff := bytes.NewBuffer(data)
 

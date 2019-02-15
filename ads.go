@@ -9,34 +9,42 @@ import (
 	"time"
 )
 
-var portOpen bool
 var RouterNotification func(response int)
 
-type AdsSyncMap struct {
-	sync.Map
+type WriteStruct struct {
+	Variable string
+	Value    string
 }
 
-func (testMap *AdsSyncMap) Empty() bool {
-	var count int
-	testMap.Range(func(k, v interface{}) bool {
-		count++
-		return false
-	})
-	if count > 0 {
-		return false
-	}
-	return true
+type updateStruct struct {
+	variable  string
+	timestamp time.Time
+	value     []byte
 }
 
+type NotificationStruct struct {
+	Variable  string
+	Value     string
+	TimeStamp time.Time
+}
 type Connection struct {
-	addr          *AmsAddr
-	port          int
-	SymbolsLoaded bool
+	addr            *AmsAddr
+	port            int
+	SymbolsLoaded   bool
+	Write           chan WriteStruct
+	WriteRead       chan WriteStruct
+	Update          chan updateStruct
+	UpdateResponse  chan string
+	Read            chan string
+	ReadResponse    chan string
+	AddNotification chan string
+	Notification    chan NotificationStruct
 
-	Symbols             map[string]*ADSSymbol
+	symbols             map[string]*ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
-	handles             map[uint32]*ADSSymbol
-	notificationHandles map[uint32]*ADSSymbol
+	handles             map[uint32]string
+	notificationHandles map[uint32]string
+	pollVariables       []string
 	// notificationHandles sync.map
 }
 
@@ -55,15 +63,13 @@ type ADSSymbol struct {
 	Comment            string
 	Handle             uint32
 	NotificationHandle uint32
-	ChangedHandlers    []func(ADSSymbol) // Fix: doesn't allow change values
-	ChangedChannel     []chan ChangedRepsonse
 	Group              uint32
 	Offset             uint32
 	Length             uint32
+	Changed            bool
 
-	Value   string
-	Valid   bool
-	Changed bool
+	Value string
+	Valid bool
 
 	Parent *ADSSymbol
 	Childs map[string]*ADSSymbol
@@ -78,7 +84,6 @@ func init() {
 }
 
 func AddLocalConnection() (conn *Connection, err error) {
-
 	localConnection := Connection{}
 	open, err := adsAmsPortEnabled()
 	if err != nil {
@@ -102,12 +107,14 @@ func AddLocalConnection() (conn *Connection, err error) {
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
+	go localConnection.readWritePump()
 	return
 }
 
 func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error) {
 	fmt.Println("local package")
 	localConnection := Connection{}
+
 	open, err := adsAmsPortEnabled()
 	if !open {
 		localConnection.port = adsPortOpenEx()
@@ -118,7 +125,7 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 	}
 	localConnection.addr = &AmsAddr{}
 	localConnection.setRemoteAddress(netID)
-	fmt.Printf("remote connection at %d %d %d %d %d %d\n",
+	fmt.Printf("Remote connection at Port: %d Port: %d Address: %d %d %d %d %d %d\n",
 		localConnection.port,
 		localConnection.addr.Port,
 		localConnection.addr.NetId.B[0],
@@ -137,7 +144,7 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
-
+	go localConnection.readWritePump()
 	return conn, err
 }
 
@@ -162,10 +169,18 @@ func (localConnection *Connection) initializeConnVariables() error {
 }
 
 func (localConnection *Connection) initializeConnection() {
-	localConnection.Symbols = map[string]*ADSSymbol{}
+	localConnection.Read = make(chan string)
+	localConnection.ReadResponse = make(chan string)
+	localConnection.Notification = make(chan NotificationStruct)
+	localConnection.AddNotification = make(chan string)
+	localConnection.UpdateResponse = make(chan string)
+	localConnection.Write = make(chan WriteStruct)
+	localConnection.WriteRead = make(chan WriteStruct)
+	localConnection.Update = make(chan updateStruct)
+	localConnection.symbols = map[string]*ADSSymbol{}
 	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
-	localConnection.handles = map[uint32]*ADSSymbol{}
-	localConnection.notificationHandles = map[uint32]*ADSSymbol{}
+	localConnection.handles = map[uint32]string{}
+	localConnection.notificationHandles = map[uint32]string{}
 }
 
 // CloseAllConnections closes open connections
@@ -178,9 +193,7 @@ func CloseAllConnections() {
 			return
 		}
 		log.Println("Closed")
-
 	}
-
 }
 
 // CloseConnection closes current connection
@@ -190,7 +203,7 @@ func (localConnection *Connection) CloseConnection() {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Println("deleted notification handle %d", k)
+			fmt.Printf("deleted notification handle %d\n", k)
 		}
 	}
 	for k := range localConnection.handles {
@@ -198,7 +211,7 @@ func (localConnection *Connection) CloseConnection() {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			fmt.Println("deleted handle %d", k)
+			fmt.Printf("deleted handle %d\n", k)
 		}
 	}
 	return
@@ -218,64 +231,83 @@ func showInfoComments(info *ADSSymbol) {
 	}
 }
 
-func (localConnection *Connection) BeginNotifcations() {
-	go localConnection.notificationPump()
-}
-
-// AddNotification adds event notification to handle
-func (node *ADSSymbol) AddNotification(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback func(ADSSymbol)) {
+func (node *ADSSymbol) addNotificationChannel(mode uint32, cycleTime time.Duration, maxTime time.Duration) {
 	node.adsSyncAddDeviceNotificationReqEx(mode, uint32(maxTime), uint32(cycleTime))
-	node.addCallback(callback)
 }
 
-func (node *ADSSymbol) AddNotificationChannel(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback chan ChangedRepsonse) {
-	node.adsSyncAddDeviceNotificationReqEx(mode, uint32(maxTime), uint32(cycleTime))
-	node.addCallbackChannel(callback)
-}
-
-var index uint32
-
-// AddResponseChannel adds event notification to handle
-func (node *ADSSymbol) AddResponseChannel(mode uint32, cycleTime time.Duration, maxTime time.Duration, callback chan ChangedRepsonse) {
-	node.MinUpdateInterval = time.Millisecond * 100
-	node.Connection.notificationHandles[index] = node
-	index++
-	node.addRepsoneChannel(callback)
-}
-
-func (localConnection *Connection) notificationPump() {
+func (localConnection *Connection) readWritePump() {
 	for {
-		for _, variable := range localConnection.notificationHandles {
-			if time.Since(variable.LastUpdateTime) > variable.MinUpdateInterval {
-				value, _ := variable.GetJSON(false)
-				for _, callback := range variable.ChangedChannel {
-					callback <- ChangedRepsonse{Variable: variable.FullName, Value: value}
+		select {
+		case s := <-localConnection.Read:
+			symbol, ok := localConnection.symbols[s]
+			if ok {
+				err := symbol.updateVariable()
+				if err != nil {
+					fmt.Printf("error here %v/n", err)
+					localConnection.ReadResponse <- "{}"
+				} else {
+					value := symbol.getJSON(false)
+					localConnection.ReadResponse <- value
 				}
+			} else {
+				localConnection.ReadResponse <- "{}"
+				fmt.Println(s)
+			}
+		case s := <-localConnection.Write:
+			value, ok := localConnection.symbols[s.Variable]
+			if ok {
+				value.Write(s.Value)
+			} else {
+				fmt.Println("bad")
+			}
+		case s := <-localConnection.WriteRead:
+			variable, ok := localConnection.symbols[s.Variable]
+			value := "{}"
+			if ok {
+				variable.Write(s.Value)
+				variable.updateVariable()
+				value = variable.getJSON(false)
+			}
+			localConnection.ReadResponse <- value
+		case s := <-localConnection.Update:
+			variable, ok := localConnection.symbols[s.variable]
+			if ok {
+				variable.parse(s.value, 0)
+				localConnection.Notification <- NotificationStruct{Variable: s.variable, Value: variable.getJSON(true), TimeStamp: s.timestamp}
+				// localConnection.UpdateResponse <- value.getJSON(true)
+				variable.clearChanged()
+			}
+			// } else {
+			// 	localConnection.UpdateResponse <- ""
+			// }
+		case s := <-localConnection.AddNotification:
+			value, ok := localConnection.symbols[s]
+			if ok {
+				value.addNotificationChannel(ADSTRANS_SERVERONCHA, time.Millisecond*50, time.Millisecond)
 			}
 		}
 	}
 }
 
 // GetStringValue returns value from PLC in string format
-func (node *ADSSymbol) GetStringValue() (value string, err error) {
-
-	if node.Handle == 0 {
-		err = node.getHandle()
+func (node *ADSSymbol) updateVariable() error {
+	if time.Since(node.LastUpdateTime) > node.MinUpdateInterval {
+		if node.Handle == 0 {
+			err := node.getHandle()
+			if err != nil {
+				return err
+			}
+		}
+		data, err := node.Connection.getValueByHandle(
+			node.Handle,
+			node.Length)
+		if err != nil {
+			node.Handle = 0
+			return err
+		}
+		node.parse(data, 0)
 	}
-	if err != nil {
-		return "", err
-	}
-	lock.Lock()
-	data, err := node.Connection.getValueByHandle(
-		node.Handle,
-		node.Length)
-	if err != nil {
-		node.Handle = 0
-		return "", err
-	}
-	node.parse(data, 0)
-	lock.Unlock()
-	return node.Value, err
+	return nil
 }
 
 func (node *ADSSymbol) Write(value string) {
@@ -286,24 +318,16 @@ func (node *ADSSymbol) Write(value string) {
 }
 
 // GetJSON (onlyChanged bool) string
-func (node *ADSSymbol) GetJSON(onlyChanged bool) (string, error) {
-	if !onlyChanged {
-		_, err := node.GetStringValue()
-		if err != nil {
-			return "", err
-		}
-	}
-	// data := make(map[string]interface{})
-	// data[node.FullName] = node.parseNode(onlyChanged)
-	lock.RLock()
-	defer lock.RUnlock()
+func (node *ADSSymbol) getJSON(onlyChanged bool) string {
 	data := node.parseNode(onlyChanged)
 	if jsonData, err := json.Marshal(data); err == nil {
-		return string(jsonData), nil
+		return string(jsonData)
 	}
-
-	return "", nil
+	return ""
 }
+
+var openBracketRegex = regexp.MustCompile(`\[`)
+var closeBracketRegex = regexp.MustCompile(`\]`)
 
 // ParseNode returns JSON interface for symbol
 func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
@@ -311,39 +335,29 @@ func (node *ADSSymbol) parseNode(onlyChanged bool) (rData interface{}) {
 		rData = node.Value
 		// node.Changed = false
 	} else {
-		// if strings.HasPrefix(node.DataType, "ARRAY") {
-		// 	re := regexp.MustCompile(`\[.*\.\.(\d+)\]`)
-		// 	arraySize, _ := strconv.Atoi(re.FindAllStringSubmatch(node.DataType, 1)[0][1])
-		// 	arraySize++
-		// 	localArray := make([]interface{}, arraySize)
-		// 	for _, child := range node.Childs {
-		// 		re := regexp.MustCompile(`\[(\d+)\]`)
-		// 		arrayIndex, _ := strconv.Atoi(re.FindAllStringSubmatch(child.Name, 1)[0][1])
-		// 		localArray[arrayIndex] = child.ParseNode()
-		// 	}
-		// 	rData = localArray
-		// } else {
 		localMap := make(map[string]interface{})
 		for _, child := range node.Childs {
 			if onlyChanged {
 				if child.Changed {
-					re := regexp.MustCompile(`\[`)
-					s := re.ReplaceAllString(child.Name, `"[`)
-					re = regexp.MustCompile(`\]`)
-					s = re.ReplaceAllString(s, `]"`)
+					s := openBracketRegex.ReplaceAllString(child.Name, `"[`)
+					s = closeBracketRegex.ReplaceAllString(s, `]"`)
 					localMap[s] = child.parseNode(true)
 					// child.Changed = false
 				}
 			} else {
-				re := regexp.MustCompile(`\[`)
-				s := re.ReplaceAllString(child.Name, `"[`)
-				re = regexp.MustCompile(`\]`)
-				s = re.ReplaceAllString(s, `]"`)
+				s := openBracketRegex.ReplaceAllString(child.Name, `"[`)
+				s = closeBracketRegex.ReplaceAllString(s, `]"`)
 				localMap[s] = child.parseNode(false)
 			}
 		}
 		rData = localMap
-		return
 	}
 	return
+}
+
+func (node *ADSSymbol) clearChanged() {
+	for _, localNode := range node.Childs {
+		localNode.clearChanged()
+	}
+	node.Changed = false
 }
