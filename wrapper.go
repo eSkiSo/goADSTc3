@@ -77,7 +77,6 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 			update.value = cBytes
 			update.timestamp = unixTime
 			connection.Update <- update
-		}()
 }
 
 func AdsGetDllVersion() (version AdsVersion) {
