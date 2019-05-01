@@ -16,6 +16,7 @@ void  routerNotificationFun(long);
 import "C"
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"strconv"
@@ -54,38 +55,23 @@ func adsAmsPortEnabled() (bool, error) {
 	return bool(portOpen), nil
 }
 
-type large_integer struct {
-	upper int32
-	lower uint32
-}
-
-func (i *large_integer) get() int64 {
-	return int64(i.upper)<<32 | int64(i.lower)
-}
-
-func (i *large_integer) set(v int64) {
-	i.lower = uint32(v & 0xffffffff)
-	i.upper = int32(v >> 32)
-}
-
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
 		goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
 		connection := getConnectionFromAddress(*goAmsAddr)
-		// notificationSomething := &notification.hNotification
-		
-		notificationHeader := (*AdsNotificationHeader)(unsafe.Pointer(notification))
+	cdata := C.GoBytes(unsafe.Pointer(notification), C.sizeof_AdsNotificationHeader)
+	buf := bytes.NewBuffer(cdata)
+	notificationHeader := &AdsNotificationHeader{}
+	binary.Read(buf, binary.LittleEndian, &notificationHeader.HNotification)
+	binary.Read(buf, binary.LittleEndian, &notificationHeader.Timestamp)
+	binary.Read(buf, binary.LittleEndian, &notificationHeader.CbSampleSize)
+	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
 		variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
 		if !ok {
 			fmt.Printf("note error: %v", uint32(notification.hNotification))
 			return
 		}
-		var large large_integer
-		large.set(int64(notificationHeader.Timestamp))
-		filetime := syscall.Filetime{ LowDateTime: uint32(large.upper), HighDateTime: uint32(large.lower)}
-		unixTime := time.Unix(0,filetime.Nanoseconds())
-		cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-		go func(){
+	unixTime := time.Unix(int64(notificationHeader.Timestamp/10000000)-11644473600, 0)
 			var update = updateStruct{}
 			update.variable = variable
 			update.value = cBytes
