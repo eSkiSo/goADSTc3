@@ -84,7 +84,12 @@ func AdsGetDllVersion() (version AdsVersion) {
 	adsLock.Lock()
 	cAdsVersion := C.AdsGetDllVersion()
 	adsLock.Unlock()
-	version = *(*AdsVersion)(unsafe.Pointer(&cAdsVersion))
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, uint32(cAdsVersion))
+	buf := bytes.NewBuffer(b)
+	binary.Read(buf, binary.LittleEndian, &version.Build)
+	binary.Read(buf, binary.LittleEndian, &version.Revision)
+	binary.Read(buf, binary.LittleEndian, &version.Version)
 	return
 }
 
