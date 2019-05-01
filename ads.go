@@ -1,6 +1,7 @@
 package ads
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,8 +9,6 @@ import (
 	"sync"
 	"time"
 )
-
-var RouterNotification func(response int)
 
 type WriteStruct struct {
 	Variable string
@@ -28,30 +27,31 @@ type NotificationStruct struct {
 	TimeStamp time.Time
 }
 type Connection struct {
-	addr            *AmsAddr
-	port            int
-	SymbolsLoaded   bool
-	Write           chan WriteStruct
-	WriteRead       chan WriteStruct
-	Update          chan updateStruct
-	UpdateResponse  chan string
-	Read            chan string
-	ReadResponse    chan string
-	AddNotification chan string
-	Notification    chan NotificationStruct
+	addr                   *AmsAddr
+	port                   int
+	SymbolsLoaded          bool
+	Write                  chan WriteStruct
+	WriteRead              chan WriteStruct
+	Update                 chan updateStruct
+	UpdateResponse         chan string
+	Read                   chan string
+	ReadResponse           chan string
+	AddNotification        chan string
+	AddPollingNotification chan string
+	Notification           chan NotificationStruct
 
 	symbols             map[string]*ADSSymbol
 	datatypes           map[string]ADSSymbolUploadDataType
 	handles             map[uint32]string
 	notificationHandles map[uint32]string
 	pollVariables       []string
-	// notificationHandles sync.map
 }
 
 type ChangedRepsonse struct {
 	Variable string
 	Value    string
 }
+
 type ADSSymbol struct {
 	Connection         *Connection
 	Self               *ADSSymbol
@@ -75,15 +75,23 @@ type ADSSymbol struct {
 	Childs map[string]*ADSSymbol
 }
 
-var lock *sync.RWMutex
+var registeredRouterNotification bool
+var routerNotificationClients []chan int
+
 var adsLock *sync.Mutex
 
 func init() {
-	lock = &sync.RWMutex{}
 	adsLock = &sync.Mutex{}
 }
+func AddRouterNotification(response chan int) {
+	if !registeredRouterNotification {
+		RegisterRouterNotification()
+		registeredRouterNotification = true
+	}
+	routerNotificationClients = append(routerNotificationClients, response)
+}
 
-func AddLocalConnection() (conn *Connection, err error) {
+func AddLocalConnection(ctx context.Context) (conn *Connection, err error) {
 	localConnection := Connection{}
 	open, err := adsAmsPortEnabled()
 	if err != nil {
@@ -91,11 +99,15 @@ func AddLocalConnection() (conn *Connection, err error) {
 	}
 
 	if !open {
-		adsPortOpen()
+		localConnection.port = adsPortOpenEx()
+		fmt.Println(localConnection.port)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	localConnection.addr = &AmsAddr{}
-	localConnection.adsGetLocalAddress()
+	localConnection.adsGetLocalAddressEx()
 	fmt.Printf("local connection at %d %d %d \n", localConnection.port, localConnection.addr.Port, localConnection.addr.NetId.B[0])
 	localConnection.addr.Port = 851
 
@@ -107,12 +119,14 @@ func AddLocalConnection() (conn *Connection, err error) {
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
-	go localConnection.readWritePump()
+	go localConnection.readWritePump(ctx)
 	return
 }
 
-func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error) {
-	fmt.Println("local package")
+func AddRemoteConnection(ctx context.Context, netID string, port uint16) (conn *Connection, err error) {
+	log.Println("local package")
+	adsVersion := AdsGetDllVersion()
+	log.Printf("Ads Version: Version: %v, Build %v, Revision %v", adsVersion.Version, adsVersion.Build, adsVersion.Revision)
 	localConnection := Connection{}
 
 	open, err := adsAmsPortEnabled()
@@ -144,7 +158,7 @@ func AddRemoteConnection(netID string, port uint16) (conn *Connection, err error
 
 	connections = append(connections, &localConnection)
 	conn = &localConnection
-	go localConnection.readWritePump()
+	go localConnection.readWritePump(ctx)
 	return conn, err
 }
 
@@ -171,12 +185,13 @@ func (localConnection *Connection) initializeConnVariables() error {
 func (localConnection *Connection) initializeConnection() {
 	localConnection.Read = make(chan string)
 	localConnection.ReadResponse = make(chan string)
-	localConnection.Notification = make(chan NotificationStruct)
+	localConnection.Notification = make(chan NotificationStruct, 100)
 	localConnection.AddNotification = make(chan string)
+	localConnection.AddPollingNotification = make(chan string)
 	localConnection.UpdateResponse = make(chan string)
 	localConnection.Write = make(chan WriteStruct)
 	localConnection.WriteRead = make(chan WriteStruct)
-	localConnection.Update = make(chan updateStruct)
+	localConnection.Update = make(chan updateStruct, 100)
 	localConnection.symbols = map[string]*ADSSymbol{}
 	localConnection.datatypes = map[string]ADSSymbolUploadDataType{}
 	localConnection.handles = map[uint32]string{}
@@ -197,7 +212,7 @@ func CloseAllConnections() {
 }
 
 // CloseConnection closes current connection
-func (localConnection *Connection) CloseConnection() {
+func (localConnection Connection) CloseConnection() {
 	for k := range localConnection.notificationHandles {
 		err := localConnection.releasNotificationeHandle(uint32(k))
 		if err != nil {
@@ -235,7 +250,8 @@ func (node *ADSSymbol) addNotificationChannel(mode uint32, cycleTime time.Durati
 	node.adsSyncAddDeviceNotificationReqEx(mode, uint32(maxTime), uint32(cycleTime))
 }
 
-func (localConnection *Connection) readWritePump() {
+func (localConnection *Connection) readWritePump(ctx context.Context) {
+ForLoop:
 	for {
 		select {
 		case s := <-localConnection.Read:
@@ -258,7 +274,7 @@ func (localConnection *Connection) readWritePump() {
 			if ok {
 				value.Write(s.Value)
 			} else {
-				fmt.Println("bad")
+				fmt.Printf("bad variable call: %s", s.Variable)
 			}
 		case s := <-localConnection.WriteRead:
 			variable, ok := localConnection.symbols[s.Variable]
@@ -280,11 +296,29 @@ func (localConnection *Connection) readWritePump() {
 			// } else {
 			// 	localConnection.UpdateResponse <- ""
 			// }
+		case <-time.After(50 * time.Millisecond):
+			for _, pollVariable := range localConnection.pollVariables {
+				symbol, ok := localConnection.symbols[pollVariable]
+				if ok {
+					err := symbol.updateVariable()
+					if err != nil {
+						fmt.Printf("error here %v/n", err)
+					} else {
+						value := symbol.getJSON(true)
+						localConnection.Notification <- NotificationStruct{Variable: pollVariable, Value: value, TimeStamp: time.Now()}
+					}
+
+				}
+			}
 		case s := <-localConnection.AddNotification:
 			value, ok := localConnection.symbols[s]
 			if ok {
-				value.addNotificationChannel(ADSTRANS_SERVERONCHA, time.Millisecond*50, time.Millisecond)
+				value.addNotificationChannel(ADSTRANS_SERVERONCHA, time.Millisecond*50, time.Millisecond*50)
 			}
+		case s := <-localConnection.AddPollingNotification:
+			localConnection.pollVariables = append(localConnection.pollVariables, s)
+		case <-ctx.Done():
+			break ForLoop
 		}
 	}
 }

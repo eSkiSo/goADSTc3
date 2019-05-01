@@ -57,8 +57,8 @@ func adsAmsPortEnabled() (bool, error) {
 
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
-		goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
-		connection := getConnectionFromAddress(*goAmsAddr)
+	goAmsAddr := (*AmsAddr)(unsafe.Pointer(addr))
+	connection := getConnectionFromAddress(*goAmsAddr)
 	cdata := C.GoBytes(unsafe.Pointer(notification), C.sizeof_AdsNotificationHeader)
 	buf := bytes.NewBuffer(cdata)
 	notificationHeader := &AdsNotificationHeader{}
@@ -66,17 +66,17 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	binary.Read(buf, binary.LittleEndian, &notificationHeader.Timestamp)
 	binary.Read(buf, binary.LittleEndian, &notificationHeader.CbSampleSize)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-		variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
-		if !ok {
-			fmt.Printf("note error: %v", uint32(notification.hNotification))
-			return
-		}
+	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
+	if !ok {
+		fmt.Printf("note error: %v", uint32(notification.hNotification))
+		return
+	}
 	unixTime := time.Unix(int64(notificationHeader.Timestamp/10000000)-11644473600, 0)
-			var update = updateStruct{}
-			update.variable = variable
-			update.value = cBytes
-			update.timestamp = unixTime
-			connection.Update <- update
+	var update = updateStruct{}
+	update.variable = variable
+	update.value = cBytes
+	update.timestamp = unixTime
+	connection.Update <- update
 }
 
 func AdsGetDllVersion() (version AdsVersion) {
@@ -148,8 +148,8 @@ func (conn *Connection) adsGetLocalAddressEx() (err error) {
 	return
 }
 
-func (conn *Connection) setRemoteAddress(amsId string) {
-	stringBytes := strings.Split(amsId, ".")
+func (conn *Connection) setRemoteAddress(amsID string) {
+	stringBytes := strings.Split(amsID, ".")
 	byte0, _ := strconv.Atoi(stringBytes[0])
 	byte1, _ := strconv.Atoi(stringBytes[1])
 	byte2, _ := strconv.Atoi(stringBytes[2])
@@ -213,7 +213,7 @@ func (conn *Connection) adsSyncReadReq(group uint32, offset uint32, length uint3
 		unsafe.Pointer(cDataToRead)))
 	adsLock.Unlock()
 	if errInt != 0 {
-		err = fmt.Errorf("error adsSyncReadReq: %d\n", errInt)
+		err = fmt.Errorf("error adsSyncReadReq: %d", errInt)
 		return data, err
 	}
 	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(length))
@@ -448,10 +448,8 @@ func (node *ADSSymbol) getHandle() (err error) {
 		return err
 	}
 	handle = binary.LittleEndian.Uint32(handleData)
-	lock.Lock()
 	node.Handle = handle
 	node.Connection.handles[handle] = node.FullName
-	lock.Unlock()
 
 	return err
 }
@@ -502,6 +500,7 @@ func (conn *Connection) adsSyncReadStateReq() (adsState int, deviceState int, er
 	return int(cAdsState), int(cDeviceState), nil
 }
 
+func RegisterRouterNotification() (err error) {
 	log.Println("adding router notification")
 	adsLock.Lock()
 	C.AdsAmsRegisterRouterNotification(
@@ -521,4 +520,7 @@ func UnregisterRouterNotification() (err error) {
 //export routerNotificationFun
 func routerNotificationFun(response C.long) {
 	log.Printf("notification received %d\n", response)
+	for _, client := range routerNotificationClients {
+		client <- int(response)
+	}
 }
