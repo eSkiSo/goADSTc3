@@ -42,10 +42,6 @@ func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
 		return err
 	}
 
-	// if conn.Symbols == nil {
-	// 	conn.Symbols = map[string]*ADSSymbol{}
-	// }
-
 	var buff = bytes.NewBuffer(res)
 
 	for buff.Len() > 0 {
@@ -100,17 +96,11 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 	sym.Group = symbol.SymbolEntry.IGroup
 	sym.Offset = symbol.SymbolEntry.IOffs
 
-	//fmt.Println(symbol.Name)
-
 	dt, ok := conn.datatypes[symbol.DataType]
 	if ok {
-		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 		sym.Childs = dt.addOffset(sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 	}
 	conn.symbols[symbol.Name] = sym
-	// for _, child := range sym.Childs {
-	// 	conn.Symbols[child.FullName] = *child
-	// }
 	return
 }
 
@@ -167,7 +157,7 @@ func (conn *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
 		0x0,
 		length)
 	if errInt != nil {
-		err = fmt.Errorf("error doing DT UPLOAD %d\n", err)
+		err = fmt.Errorf("error doing DT UPLOAD %d", err)
 	}
 	buff := bytes.NewBuffer(data)
 
@@ -180,7 +170,6 @@ func (conn *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
 		conn.datatypes[header.Name] = header
 	}
 	return
-	//   log.Warn(hex.Dump(header));
 }
 
 func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSymbolUploadDataType, err error) {

@@ -13,6 +13,10 @@ import (
 func (dt *ADSSymbol) parse(data []byte, offset int) string { /*{{{*/
 	start := offset
 	stop := start + int(dt.Length)
+	if start+int(dt.Length) > len(data) {
+		stop = len(data)
+	}
+
 	var newValue = "nil"
 	if len(dt.Childs) > 0 {
 		for _, value := range dt.Childs {
@@ -97,6 +101,19 @@ func (dt *ADSSymbol) parse(data []byte, offset int) string { /*{{{*/
 		case "STRING":
 			trimmedBytes := bytes.TrimSpace(data[start:stop])
 			secondIndex := bytes.IndexByte(trimmedBytes, byte(0))
+			if secondIndex >= len(trimmedBytes) {
+				secondIndex = len(trimmedBytes)
+			}
+			if secondIndex < 0 {
+				secondIndex = len(trimmedBytes)
+			}
+			// fmt.Printf("Lenght of trimmed data len %v Bytes %v Data Start %v Stop %v\n value: %v second index: %v",
+			// 	len(data),
+			// 	len(trimmedBytes),
+			// 	start,
+			// 	stop,
+			// 	string(trimmedBytes),
+			// 	secondIndex)
 			newValue = string(trimmedBytes[:(secondIndex)])
 		case "TIME":
 			if stop-start != 4 {

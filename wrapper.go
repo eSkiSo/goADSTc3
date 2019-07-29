@@ -68,7 +68,7 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
 	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
 	if !ok {
-		fmt.Printf("note error: %v", uint32(notification.hNotification))
+		fmt.Printf("notification error: %v", uint32(notification.hNotification))
 		return
 	}
 	unixTime := time.Unix(int64(notificationHeader.Timestamp/10000000)-11644473600, 0)
