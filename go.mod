@@ -1,4 +1,3 @@
-module gitlab.com/xilix-systems-llc/go-native-ads/v3
+module gitlab.com/xilix-systems-llc/go-native-ads
 
 go 1.13
-
