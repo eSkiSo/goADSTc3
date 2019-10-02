@@ -1,5 +1,4 @@
-module gitlab.com/xilix-systems-llc/go-native-ads/v2
+module gitlab.com/xilix-systems-llc/go-native-ads/v3
 
 go 1.13
 
-require gitlab.com/xilix-systems-llc/go-native-ads v2.0.0+incompatible
