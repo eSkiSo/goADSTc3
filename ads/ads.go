@@ -26,6 +26,7 @@ type NotificationStruct struct {
 	Value     string
 	TimeStamp time.Time
 }
+
 type Connection struct {
 	addr                   *AmsAddr
 	port                   int
@@ -83,6 +84,7 @@ var adsLock *sync.Mutex
 func init() {
 	adsLock = &sync.Mutex{}
 }
+
 func AddRouterNotification(response chan int) {
 	if !registeredRouterNotification {
 		RegisterRouterNotification()
@@ -246,7 +248,7 @@ func showInfoComments(info *ADSSymbol) {
 	}
 }
 
-func (node *ADSSymbol) addNotificationChannel(mode uint32, cycleTime time.Duration, maxTime time.Duration) {
+func (node *ADSSymbol) addNotificationChannel(mode AdsTransMode, cycleTime time.Duration, maxTime time.Duration) {
 	node.adsSyncAddDeviceNotificationReqEx(mode, uint32(maxTime), uint32(cycleTime))
 }
 

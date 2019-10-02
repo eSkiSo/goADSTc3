@@ -335,17 +335,21 @@ func (conn *Connection) adsSyncReadWriteReqEx2(group uint32, offset uint32, read
 	return data, err
 }
 
+type AdsTransMode uint32
+
+// ADS Codes for notification style
 const (
-	ADSTRANS_NOTRANS     = 0
-	ADSTRANS_CLIENTCYCLE = 1
-	ADSTRANS_CLIENTONCHA = 2
-	ADSTRANS_SERVERCYCLE = 3
-	ADSTRANS_SERVERONCHA = 4
+	ADSTRANS_NOTRANS     AdsTransMode = 0
+	ADSTRANS_CLIENTCYCLE AdsTransMode = 1
+	ADSTRANS_CLIENTONCHA AdsTransMode = 2
+	ADSTRANS_SERVERCYCLE AdsTransMode = 3
+	ADSTRANS_SERVERONCHA AdsTransMode = 4
 )
 
-func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDelay uint32, cycleTime uint32) {
+func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode AdsTransMode, maxDelay uint32, cycleTime uint32) {
 
 	notAttrib := AdsNotificationAttrib{}
+
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
 	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
 	notAttrib.CbLength = node.Length
@@ -378,7 +382,7 @@ func (node *ADSSymbol) adsSyncAddDeviceNotificationReq(transMode uint32, maxDela
 
 }
 
-func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode uint32, maxDelay uint32, cycleTime uint32) {
+func (node *ADSSymbol) adsSyncAddDeviceNotificationReqEx(transMode AdsTransMode, maxDelay uint32, cycleTime uint32) {
 	notAttrib := AdsNotificationAttrib{}
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
 	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
