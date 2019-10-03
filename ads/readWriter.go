@@ -9,27 +9,27 @@ import (
 	"time"
 )
 
-//func (dt *ADSSymbol) parse(offset uint32, data []byte) { /*{{{*/
-func (dt *ADSSymbol) parse(data []byte, offset int) string { /*{{{*/
+//func (dt *adsSymbol) parse(offset uint32, data []byte) { /*{{{*/
+func (symbol *adsSymbol) parse(data []byte, offset int) string { /*{{{*/
 	start := offset
-	stop := start + int(dt.Length)
-	if start+int(dt.Length) > len(data) {
+	stop := start + int(symbol.Length)
+	if start+int(symbol.Length) > len(data) {
 		stop = len(data)
 	}
 
 	var newValue = "nil"
-	if len(dt.Childs) > 0 {
-		for _, value := range dt.Childs {
+	if len(symbol.Childs) > 0 {
+		for _, value := range symbol.Childs {
 			value.parse(data[offset:stop], int(value.Offset))
 		}
-		newValue = dt.getJSON(false)
+		newValue = symbol.getJSON(false)
 	} else {
-		if len(data) < int(dt.Length) {
+		if len(data) < int(symbol.Length) {
 			fmt.Printf("Incoming data is to small, !0<%d<%d<%d", start, stop, len(data))
 			return ""
 		}
 
-		switch dt.DataType {
+		switch symbol.DataType {
 		case "BOOL":
 			if stop-start != 1 {
 				return ""
@@ -151,24 +151,24 @@ func (dt *ADSSymbol) parse(data []byte, offset int) string { /*{{{*/
 			newValue = "nil"
 		}
 	}
-	if strcmp(dt.Value, newValue) != 0 &&
-		time.Since(dt.LastUpdateTime) > dt.MinUpdateInterval {
-		dt.LastUpdateTime = time.Now()
-		dt.Value = newValue
-		dt.Valid = true
-		dt.parentChanged()
+	if strcmp(symbol.Value, newValue) != 0 &&
+		time.Since(symbol.LastUpdateTime) > symbol.MinUpdateInterval {
+		symbol.LastUpdateTime = time.Now()
+		symbol.Value = newValue
+		symbol.Valid = true
+		symbol.parentChanged()
 	}
-	return dt.Value
+	return symbol.Value
 }
 
-func (symbol *ADSSymbol) parentChanged() {
+func (symbol *adsSymbol) parentChanged() {
 	if symbol.Parent != nil {
 		symbol.Parent.parentChanged()
 	}
 	symbol.Changed = true
 }
 
-func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
+func (symbol *adsSymbol) writeToNode(value string, offset int) (err error) {
 	if len(symbol.Childs) > 0 {
 		err = fmt.Errorf("cannot write to a whole struct at once")
 		return
@@ -286,7 +286,7 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 		err = fmt.Errorf("datatype '%s' write is not implemented yet", symbol.DataType)
 		return
 	}
-	symbol.writeBuffArrayEx(buf.Bytes())
+	writeBuffArrayEx(symbol.Handle, buf.Bytes())
 	return nil
 }
 
