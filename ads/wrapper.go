@@ -44,11 +44,12 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	cdata := C.GoBytes(unsafe.Pointer(notification), C.sizeof_AdsNotificationHeader)
 	buf := bytes.NewBuffer(cdata)
 	notificationHeader := &AdsNotificationHeader{}
+	binary.Read(buf, binary.LittleEndian, &notificationHeader)
 	// binary.Read(buf, binary.LittleEndian, &notificationHeader.HNotification)
+	// binary.Read(buf, binary.LittleEndian, &notificationHeader.Timestamp)
+	// binary.Read(buf, binary.LittleEndian, &notificationHeader.CbSampleSize)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-	connection.symbolLock.Lock()
 	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
-	connection.symbolLock.Unlock()
 	if !ok {
 		fmt.Printf("notification error: %w", uint32(notification.hNotification))
 		return
@@ -71,7 +72,10 @@ func GetDllVersion() AdsVersion {
 	b := make([]byte, 4)
 	binary.LittleEndian.PutUint32(b, uint32(cAdsVersion))
 	buf := bytes.NewBuffer(b)
+	// binary.Read(buf, binary.LittleEndian, version.Build)
 	// binary.Read(buf, binary.LittleEndian, version.Revision)
+	// binary.Read(buf, binary.LittleEndian, version.Version)
+	binary.Read(buf, binary.LittleEndian, version)
 	return *version
 }
 
@@ -154,9 +158,10 @@ func syncReadReqEx2(group uint32, offset uint32, length uint32) (data []byte, er
 		C.ulong(length),
 		unsafe.Pointer(cData),
 		&amountOfDataReturned))
-	client.adsLock.Unlock()
+	
 	// fmt.Println("amount of data returned", amountOfDataReturned)
 	data = C.GoBytes(unsafe.Pointer(cData), C.int(amountOfDataReturned))
+	client.adsLock.Unlock()
 	//fmt.Println(errInt)
 	if errInt != 0 {
 		return nil, fmt.Errorf("error adsSyncReadReqEx: %w", errInt)
@@ -184,8 +189,8 @@ func syncReadWriteReqEx2(group uint32, offset uint32, readLength uint32, dataToW
 		C.ulong(len(dataToWrite)),
 		unsafe.Pointer(cDataToWrite),
 		&cLengthOfReturnedBytes))
-	client.adsLock.Unlock()
 	data = C.GoBytes(unsafe.Pointer(cDataToRead), C.int(readLength))
+	client.adsLock.Unlock()
 	if errInt != 0 {
 		return nil, fmt.Errorf("error adsSyncReadWriteReq %w", errInt)
 	}
@@ -210,12 +215,11 @@ func syncAddDeviceNotificationReqEx(handle uint32, size uint32, transMode AdsTra
 		(C.PAdsNotificationFuncEx)(C.notificationFun),
 		C.ulong(0),
 		&hNotification))
+	notHandle := uint32(hNotification)
 	client.adsLock.Unlock()
 	if nErrInt != 0 {
 		return 0, fmt.Errorf("could not create notification %w", nErrInt)
 	}
-	notHandle := uint32(hNotification)
-
 	fmt.Printf("Notification Added - Handle: %d\n", handle)
 	return notHandle, nil
 }
@@ -250,7 +254,6 @@ func getHandleByString(variableName string) (handle uint32, err error) {
 		return 0, err
 	}
 	handle = binary.LittleEndian.Uint32(handleData)
-
 	return handle, nil
 }
 
