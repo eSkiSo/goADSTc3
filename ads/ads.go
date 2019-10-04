@@ -83,17 +83,17 @@ func init() {
 }
 
 // AddLocalConnection adds a connection to localhost
-func AddLocalConnection(ctx context.Context) error {
+func AddLocalConnection(ctx context.Context) (*Client, error) {
 	getLocalAddressEx()
 	fmt.Printf("local connection at %d %d %d \n", client.port, connection.addr.Port, connection.addr.NetId[0])
 	connection.addr.Port = 851
 
 	err := initializeConnVariables()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	go readWritePump(ctx)
-	return nil
+	return client, nil
 }
 
 // AddRemoteConnection adds a connection to outside computer
