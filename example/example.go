@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"gitlab.com/xilix-systems-llc/go-native-ads/v3/ads"
 )
@@ -22,7 +23,7 @@ func main() {
 		}
 	}()
 
-	client.AddNotification("MAIN.i")
+	ads.AddNotification("MAIN.i", ads.ADSTRANS_SERVERONCHA, 10*time.Millisecond, 100*time.Millisecond)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, syscall.SIGTERM)
