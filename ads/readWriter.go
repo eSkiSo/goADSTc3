@@ -9,8 +9,7 @@ import (
 	"time"
 )
 
-//func (dt *adsSymbol) parse(offset uint32, data []byte) { /*{{{*/
-func (symbol *adsSymbol) parse(data []byte, offset int) string { /*{{{*/
+func (symbol *Symbol) parse(data []byte, offset int) string {
 	start := offset
 	stop := start + int(symbol.Length)
 	if start+int(symbol.Length) > len(data) {
@@ -161,14 +160,14 @@ func (symbol *adsSymbol) parse(data []byte, offset int) string { /*{{{*/
 	return symbol.Value
 }
 
-func (symbol *adsSymbol) parentChanged() {
+func (symbol *Symbol) parentChanged() {
 	if symbol.Parent != nil {
 		symbol.Parent.parentChanged()
 	}
 	symbol.Changed = true
 }
 
-func (symbol *adsSymbol) writeToNode(value string, offset int) (err error) {
+func (symbol *Symbol) writeToNode(value string, offset int) (err error) {
 	if len(symbol.Childs) > 0 {
 		err = fmt.Errorf("cannot write to a whole struct at once")
 		return

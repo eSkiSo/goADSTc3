@@ -81,7 +81,7 @@ func uploadSymbolInfoSymbols(length uint32) error {
 }
 
 func addSymbol(symbol *adsSymbolUploadSymbol) {
-	sym := &adsSymbol{}
+	sym := &Symbol{}
 
 	// sym.Connection = conn
 	// sym.Self = sym
@@ -104,8 +104,8 @@ func addSymbol(symbol *adsSymbolUploadSymbol) {
 	return
 }
 
-func (data *adsSymbolUploadDataType) addOffset(parent *adsSymbol, group uint32, offset uint32) (childs map[string]*adsSymbol) {
-	childs = map[string]*adsSymbol{}
+func (data *adsSymbolUploadDataType) addOffset(parent *Symbol, group uint32, offset uint32) (childs map[string]*Symbol) {
+	childs = map[string]*Symbol{}
 
 	var path string
 
@@ -117,7 +117,7 @@ func (data *adsSymbolUploadDataType) addOffset(parent *adsSymbol, group uint32, 
 			path = fmt.Sprint(parent.Name, segment.Name)
 		}
 
-		child := adsSymbol{}
+		child := Symbol{}
 		// child.Self = &child
 		// child.Connection = parent.Connection
 		child.Name = segment.Name
