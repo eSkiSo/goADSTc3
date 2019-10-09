@@ -21,7 +21,7 @@ func (symbol *Symbol) parse(data []byte, offset int) (string, error) {
 		for _, value := range symbol.Childs {
 			value.parse(data[offset:stop], int(value.Offset))
 		}
-		newValue = symbol.getJSON(false)
+		newValue = symbol.GetJSON(false)
 	} else {
 		if len(data) < int(symbol.Length) {
 			fmt.Printf("Incoming data is to small, !0<%d<%d<%d", start, stop, len(data))

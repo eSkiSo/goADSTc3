@@ -300,7 +300,7 @@ func (symbol *Symbol) Read() (string, error) {
 		symbol.connection.symbolLock.Unlock()
 		return "", err
 	}
-	value := symbol.getJSON(false)
+	value := symbol.GetJSON(false)
 	symbol.connection.symbolLock.Unlock()
 	return value, nil
 }
@@ -343,7 +343,7 @@ func (symbol *Symbol) updateVariable() error {
 }
 
 // GetJSON (onlyChanged bool) string
-func (symbol *Symbol) getJSON(onlyChanged bool) string {
+func (symbol *Symbol) GetJSON(onlyChanged bool) string {
 	data := symbol.parseSymbol(onlyChanged)
 	if jsonData, err := json.Marshal(data); err == nil {
 		return string(jsonData)
