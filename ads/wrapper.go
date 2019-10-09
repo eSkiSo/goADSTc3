@@ -50,7 +50,11 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	update.notificationIndex = int(user)
 	update.value = cBytes
 	update.timestamp = unixTime
-	client.update <- update
+
+    select {
+		case client.update <- update: // Put 2 in the channel unless it is full
+		default:
+	}
 	return
 }
 
