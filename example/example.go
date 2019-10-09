@@ -18,12 +18,15 @@ func main() {
 		for {
 			select {
 			case response := <-client.Update:
-				fmt.Printf("Value %s \n", response)
+				fmt.Printf("Value %s \n", response.Value)
 			}
 		}
 	}()
 
 	client.AddNotification("GVL.AllAlarms", ads.ADSTRANS_SERVERONCHA, 10*time.Millisecond, 100*time.Millisecond)
+	client.AddNotification("MAIN.i", ads.ADSTRANS_SERVERONCHA, 10*time.Millisecond, 100*time.Millisecond)
+	client.AddNotification("MAIN.test", ads.ADSTRANS_SERVERONCHA, 10*time.Millisecond, 100*time.Millisecond)
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, syscall.SIGTERM)
