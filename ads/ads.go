@@ -11,9 +11,9 @@ import (
 )
 
 type updateStruct struct {
-	variable  string
-	timestamp time.Time
-	value     []byte
+	notificationIndex int
+	timestamp         time.Time
+	value             []byte
 }
 
 // NotificationStruct is the structure to notify clients of notifications
@@ -23,23 +23,21 @@ type NotificationStruct struct {
 	TimeStamp time.Time
 }
 
-var connection *adsConnection
-
-type adsConnection struct {
+type Connection struct {
 	addr       *amsAddr
 	symbolLock sync.Mutex
 
 	SymbolsLoaded bool
-	update        chan updateStruct
 
-	symbols             map[string]*Symbol
-	datatypes           map[string]adsSymbolUploadDataType
-	handles             map[uint32]string
-	notificationHandles map[uint32]string
-	pollVariables       []string
+	symbols       map[string]*Symbol
+	datatypes     map[string]symbolUploadDataType
+	handles       map[uint32]string
+	pollVariables []string
+	Update        chan NotificationStruct
 }
 
 type Symbol struct {
+	connection         *Connection
 	FullName           string
 	LastUpdateTime     time.Time
 	MinUpdateInterval  time.Duration
@@ -60,44 +58,62 @@ type Symbol struct {
 	Childs map[string]*Symbol
 }
 
+type clientNotification struct {
+	symbol *Symbol
+	handle uint32
+}
+
 // Client is the consumer facing struct to manage connections
 type Client struct {
-	port         int
-	adsLock      sync.Mutex
-	Notification chan NotificationStruct
+	ctx           context.Context
+	cancel        context.CancelFunc
+	port          int
+	adsLock       sync.Mutex
+	notifications []*clientNotification
+	connections   []*Connection
+	update        chan updateStruct
 }
 
 var client *Client
 
 func init() {
 	client = &Client{}
+	client.update = make(chan updateStruct, 100)
 	port := portOpenEx()
 	client.port = port
-	client.Notification = make(chan NotificationStruct, 100)
-	connection = &adsConnection{}
-	connection.update = make(chan updateStruct, 100)
-	connection.symbols = map[string]*Symbol{}
-	connection.datatypes = map[string]adsSymbolUploadDataType{}
-	connection.handles = map[uint32]string{}
-	connection.notificationHandles = map[uint32]string{}
+	client.ctx, client.cancel = context.WithCancel(context.Background())
+	go readWritePump(client.ctx)
+}
+
+func initConnection() *Connection {
+	connection := &Connection{}
+	connection.Update = make(chan NotificationStruct, 100)
+	connection.symbols = make(map[string]*Symbol)
+	connection.datatypes = make(map[string]symbolUploadDataType)
+	connection.handles = make(map[uint32]string)
+	return connection
 }
 
 // AddLocalConnection adds a connection to localhost
-func AddLocalConnection(ctx context.Context) (*Client, error) {
-	getLocalAddressEx()
+func AddLocalConnection(ctx context.Context) (*Connection, error) {
+	connection := initConnection()
+
+	connection.getLocalAddressEx()
 	fmt.Printf("local connection at %d %d %d \n", client.port, connection.addr.Port, connection.addr.NetId[0])
 	connection.addr.Port = 851
 
-	err := initializeConnVariables()
+	err := connection.initializeConnVariables()
 	if err != nil {
 		return nil, err
 	}
-	go readWritePump(ctx)
-	return client, nil
+	client.connections = append(client.connections, connection)
+	return connection, nil
 }
 
 // AddRemoteConnection adds a connection to outside computer
-func AddRemoteConnection(ctx context.Context, netID string, port uint16) (*Client, error) {
+func AddRemoteConnection(ctx context.Context, netID string, port uint16) (*Connection, error) {
+	connection := initConnection()
+
 	log.Println("local package")
 	adsVersion := GetDllVersion()
 	log.Printf("Ads Version: Version: %v, Build %v, Revision %v", adsVersion.Version, adsVersion.Build, adsVersion.Revision)
@@ -114,26 +130,27 @@ func AddRemoteConnection(ctx context.Context, netID string, port uint16) (*Clien
 		connection.addr.NetId[5])
 	connection.addr.Port = port
 
-	err := initializeConnVariables()
+	err := connection.initializeConnVariables()
 	if err != nil {
 		return nil, err
 	}
-	go readWritePump(ctx)
-	return client, nil
+
+	client.connections = append(client.connections, connection)
+	return connection, nil
 }
 
-func initializeConnVariables() error {
-	uploadInfo, err := getSymbolUploadInfo()
+func (connection *Connection) initializeConnVariables() error {
+	uploadInfo, err := connection.getSymbolUploadInfo()
 	if err != nil {
 		return err
 	}
 	fmt.Println("uploadinfo  loaded", uploadInfo.NDatatypeSize, uploadInfo.NSymSize)
-	err = uploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
+	err = connection.uploadSymbolInfoDataTypes(uploadInfo.NDatatypeSize)
 	if err != nil {
 		return err
 	}
 	fmt.Println("uploadSymbolInfoDataTypes  loaded")
-	err = uploadSymbolInfoSymbols(uploadInfo.NSymSize)
+	err = connection.uploadSymbolInfoSymbols(uploadInfo.NSymSize)
 	if err != nil {
 		return err
 	}
@@ -142,18 +159,18 @@ func initializeConnVariables() error {
 	return nil
 }
 
-// CloseConnection closes current connection
-func CloseConnection() {
-	for k := range connection.notificationHandles {
-		err := releaseNotificationeHandle(uint32(k))
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			fmt.Printf("deleted notification handle %d\n", k)
-		}
+func Shutdown() {
+	client.cancel()
+	for _, connection := range client.connections {
+		connection.closeConnection()
 	}
+	closeClient()
+}
+
+// CloseConnection closes current connection
+func (connection *Connection) closeConnection() {
 	for k := range connection.handles {
-		err := releaseHandle(uint32(k))
+		err := connection.releaseHandle(uint32(k))
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -163,17 +180,28 @@ func CloseConnection() {
 	return
 }
 
-func showComments(info *adsSymbolUploadDataType) {
-	fmt.Println(info.Name)
-	for _, value := range info.Childs {
-		showComments(value)
+func closeClient() {
+	for _, k := range client.notifications {
+		err := k.symbol.connection.releaseNotificationeHandle(k.handle)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Printf("deleted notification handle %d\n", k)
+		}
 	}
 }
 
-func showInfoComments(info *Symbol) {
+func (info *symbolUploadDataType) showComments() {
 	fmt.Println(info.Name)
 	for _, v := range info.Childs {
-		showInfoComments(v)
+		v.showComments()
+	}
+}
+
+func (symbol *Symbol) showInfoComments() {
+	fmt.Println(symbol.Name)
+	for _, v := range symbol.Childs {
+		v.showInfoComments()
 	}
 }
 
@@ -181,30 +209,29 @@ func readWritePump(ctx context.Context) {
 ForLoop:
 	for {
 		select {
-		case s := <-connection.update:
-			connection.symbolLock.Lock()
-			symbol, err := GetSymbol(s.variable)
-			if err != nil {
-				continue
-			}
+		case s := <-client.update:
+			notification := client.notifications[s.notificationIndex]
+			symbol := notification.symbol
+			symbol.connection.symbolLock.Lock()
 			symbol.parse(s.value, 0)
-			client.Notification <- NotificationStruct{Variable: s.variable, Value: symbol.getJSON(true), TimeStamp: s.timestamp}
+			hmiNotification := NotificationStruct{Variable: symbol.FullName, Value: symbol.getJSON(true), TimeStamp: s.timestamp}
+			symbol.connection.Update <- hmiNotification
 			symbol.clearChanged()
-			connection.symbolLock.Unlock()
-		case <-time.After(50 * time.Millisecond):
-			for _, pollVariable := range connection.pollVariables {
-				connection.symbolLock.Lock()
-				symbol, err := GetSymbol(pollVariable)
-				err = symbol.updateVariable()
-				if err != nil {
-					fmt.Printf("error here %v/n", err)
-				} else {
-					value := symbol.getJSON(true)
-					client.Notification <- NotificationStruct{Variable: pollVariable, Value: value, TimeStamp: time.Now()}
-				}
-				connection.symbolLock.Unlock()
-
-			}
+			symbol.connection.symbolLock.Unlock()
+			// connection.symbolLock.Unlock()
+		// case <-time.After(50 * time.Millisecond):
+		// 	for _, pollVariable := range connection.pollVariables {
+		// 		connection.symbolLock.Lock()
+		// 		symbol, err := connection.GetSymbol(pollVariable)
+		// 		err = symbol.updateVariable()
+		// 		if err != nil {
+		// 			fmt.Printf("error here %v/n", err)
+		// 		} else {
+		// 			value := symbol.getJSON(true)
+		// 			client.Notification <- NotificationStruct{Variable: pollVariable, Value: value, TimeStamp: time.Now()}
+		// 		}
+		// 		connection.symbolLock.Unlock()
+		// 	}
 		case <-ctx.Done():
 			break ForLoop
 		}
@@ -212,7 +239,7 @@ ForLoop:
 }
 
 // GetSymbol retrieves symbol based on FullName
-func GetSymbol(variable string) (*Symbol, error) {
+func (connection *Connection) GetSymbol(variable string) (*Symbol, error) {
 	symbol, ok := connection.symbols[variable]
 	if !ok {
 		return nil, fmt.Errorf("symbol not found")
@@ -220,7 +247,7 @@ func GetSymbol(variable string) (*Symbol, error) {
 	if symbol.Handle != 0 {
 		return symbol, nil
 	}
-	handle, err := getHandleByString(variable)
+	handle, err := connection.getHandleByString(variable)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get handle for symbol %w", err)
 	}
@@ -230,66 +257,80 @@ func GetSymbol(variable string) (*Symbol, error) {
 }
 
 // Write writes value to variable
-func Write(variable string, value string) error {
+func (connection *Connection) Write(variable string, value string) error {
 	connection.symbolLock.Lock()
-	defer connection.symbolLock.Unlock()
-	symbol, err := GetSymbol(variable)
+	symbol, err := connection.GetSymbol(variable)
 	if err != nil {
+		connection.symbolLock.Unlock()
 		return fmt.Errorf("symbol not found")
 	}
 	symbol.Write(value)
+	connection.symbolLock.Unlock()
 	return nil
 
 }
 
 func (symbol *Symbol) Write(value string) error {
-	symbol.writeToNode(value, 0)
-	return nil
+	symbol.connection.symbolLock.Lock()
+	err := symbol.writeToNode(value, 0)
+	symbol.connection.symbolLock.Unlock()
+	if err != nil {
+		fmt.Println(err)
+	}
+	return err
 }
 
 // Read writes value to variable
-func Read(variable string) (string, error) {
+func (connection *Connection) Read(variable string) (string, error) {
 	connection.symbolLock.Lock()
-	defer connection.symbolLock.Unlock()
-	symbol, err := GetSymbol(variable)
+	symbol, err := connection.GetSymbol(variable)
 	if err != nil {
+		connection.symbolLock.Unlock()
 		return "", fmt.Errorf("error: %w", err)
 	}
-	return symbol.Read()
+	connection.symbolLock.Unlock()
+	value, _ := symbol.Read()
+	return value, nil
 }
 
 func (symbol *Symbol) Read() (string, error) {
+	symbol.connection.symbolLock.Lock()
 	err := symbol.updateVariable()
 	if err != nil {
+		symbol.connection.symbolLock.Unlock()
 		return "", err
 	}
 	value := symbol.getJSON(false)
+	symbol.connection.symbolLock.Unlock()
 	return value, nil
 }
 
 // AddNotification adds
-func AddNotification(variable string, mode AdsTransMode, cycleTime time.Duration, maxTime time.Duration) {
+func (connection *Connection) AddNotification(variable string, mode AdsTransMode, cycleTime time.Duration, maxTime time.Duration) {
 	connection.symbolLock.Lock()
 	defer connection.symbolLock.Unlock()
-	symbol, err := GetSymbol(variable)
+	symbol, err := connection.GetSymbol(variable)
 	if err != nil {
 		return
 	}
 	symbol.AddNotification(mode, maxTime, cycleTime)
-	// addNotificationChannel(variable, ADSTRANS_SERVERONCHA, 5*time.Millisecond, 5*time.Millisecond)
 }
 
 // AddNotification adds
 func (symbol *Symbol) AddNotification(mode AdsTransMode, cycleTime time.Duration, maxTime time.Duration) {
-	handle, _ := syncAddDeviceNotificationReqEx(symbol.Handle, symbol.Length, mode, uint32(maxTime), uint32(cycleTime))
-	connection.notificationHandles[handle] = symbol.FullName
-	// addNotificationChannel(variable, ADSTRANS_SERVERONCHA, 5*time.Millisecond, 5*time.Millisecond)
+	notification := &clientNotification{
+		symbol: symbol,
+	}
+	client.notifications = append(client.notifications, notification)
+	index := len(client.notifications) - 1
+	handle, _ := symbol.connection.syncAddDeviceNotificationReqEx(symbol.Handle, symbol.Length, mode, uint32(maxTime), uint32(cycleTime), uint32(index))
+	notification.handle = handle
 }
 
 // updateVariable returns value from PLC in string format
 func (symbol *Symbol) updateVariable() error {
 	if time.Since(symbol.LastUpdateTime) > symbol.MinUpdateInterval {
-		data, err := getValueByHandle(
+		data, err := symbol.connection.getValueByHandle(
 			symbol.Handle,
 			symbol.Length)
 		if err != nil {
@@ -321,16 +362,14 @@ func (symbol *Symbol) parseSymbol(onlyChanged bool) (rData interface{}) {
 	} else {
 		localMap := make(map[string]interface{})
 		for _, child := range symbol.Childs {
+			s := openBracketRegex.ReplaceAllString(child.Name, `"[`)
+			s = closeBracketRegex.ReplaceAllString(s, `]"`)
 			if onlyChanged {
 				if child.Changed {
-					s := openBracketRegex.ReplaceAllString(child.Name, `"[`)
-					s = closeBracketRegex.ReplaceAllString(s, `]"`)
 					localMap[s] = child.parseSymbol(true)
 					// child.Changed = false
 				}
 			} else {
-				s := openBracketRegex.ReplaceAllString(child.Name, `"[`)
-				s = closeBracketRegex.ReplaceAllString(s, `]"`)
 				localMap[s] = child.parseSymbol(false)
 			}
 		}

@@ -13,24 +13,24 @@ import (
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	client, _ := ads.AddRemoteConnection(ctx, "169.254.88.102.1.1", 851)
+	client, _ := ads.AddRemoteConnection(ctx, "5.15.131.166.1.1", 851)
 	go func() {
 		for {
 			select {
-			case response := <-client.Notification:
-				fmt.Printf("Value %s \n", response.Value)
+			case response := <-client.Update:
+				fmt.Printf("Value %s \n", response)
 			}
 		}
 	}()
 
-	ads.AddNotification("MAIN.i", ads.ADSTRANS_SERVERONCHA, 10*time.Millisecond, 100*time.Millisecond)
+	client.AddNotification("GVL.AllAlarms", ads.ADSTRANS_SERVERONCHA, 10*time.Millisecond, 100*time.Millisecond)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	signal.Notify(c, syscall.SIGTERM)
 
 	<-c
 	cancel()
-	ads.CloseConnection()
+	ads.Shutdown()
 	fmt.Println("closing")
 	// sig is a ^C, handle it
 	os.Exit(1)

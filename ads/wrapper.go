@@ -40,26 +40,17 @@ func adsAmsPortEnabledEx(port int) (bool, error) {
 
 //export notificationFun
 func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, user C.ulong) {
-	// goamsAddr := (*AmsAddr)(unsafe.Pointer(addr))
 	cdata := C.GoBytes(unsafe.Pointer(notification), C.sizeof_AdsNotificationHeader)
 	buf := bytes.NewBuffer(cdata)
 	notificationHeader := &AdsNotificationHeader{}
-	binary.Read(buf, binary.LittleEndian, &notificationHeader)
-	// binary.Read(buf, binary.LittleEndian, &notificationHeader.HNotification)
-	// binary.Read(buf, binary.LittleEndian, &notificationHeader.Timestamp)
-	// binary.Read(buf, binary.LittleEndian, &notificationHeader.CbSampleSize)
+	binary.Read(buf, binary.LittleEndian, notificationHeader)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-	variable, ok := connection.notificationHandles[uint32(notification.hNotification)]
-	if !ok {
-		fmt.Printf("notification error: %w", uint32(notification.hNotification))
-		return
-	}
 	unixTime := time.Unix(int64(notificationHeader.Timestamp/10000000)-11644473600, 0)
 	var update = updateStruct{}
-	update.variable = variable
+	update.notificationIndex = int(user)
 	update.value = cBytes
 	update.timestamp = unixTime
-	connection.update <- update
+	client.update <- update
 	return
 }
 
@@ -72,9 +63,6 @@ func GetDllVersion() AdsVersion {
 	b := make([]byte, 4)
 	binary.LittleEndian.PutUint32(b, uint32(cAdsVersion))
 	buf := bytes.NewBuffer(b)
-	// binary.Read(buf, binary.LittleEndian, version.Build)
-	// binary.Read(buf, binary.LittleEndian, version.Revision)
-	// binary.Read(buf, binary.LittleEndian, version.Version)
 	binary.Read(buf, binary.LittleEndian, version)
 	return *version
 }
@@ -99,7 +87,7 @@ func portCloseEx(port int) error {
 }
 
 // GetLocalAddressEx gets local NetId
-func getLocalAddressEx() error {
+func (connection *Connection) getLocalAddressEx() error {
 	client.adsLock.Lock()
 	errInt := C.AdsGetLocalAddressEx(C.long(client.port), (*C.AmsAddr)(unsafe.Pointer(connection.addr)))
 	client.adsLock.Unlock()
@@ -127,7 +115,7 @@ func stringToNetID(amsID string) (id amsNetId) {
 	return id
 }
 
-func syncWriteReqEx(group uint32, offset uint32, data []byte) error {
+func (connection *Connection) syncWriteReqEx(group uint32, offset uint32, data []byte) error {
 	cDataToWrite := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToWrite))
 	client.adsLock.Lock()
@@ -145,7 +133,7 @@ func syncWriteReqEx(group uint32, offset uint32, data []byte) error {
 	return nil
 }
 
-func syncReadReqEx2(group uint32, offset uint32, length uint32) (data []byte, err error) {
+func (connection *Connection) syncReadReqEx2(group uint32, offset uint32, length uint32) (data []byte, err error) {
 	amountOfDataReturned := C.ulong(length)
 	cData := C.CString(string(make([]byte, length)))
 	defer C.free(unsafe.Pointer(cData))
@@ -169,7 +157,7 @@ func syncReadReqEx2(group uint32, offset uint32, length uint32) (data []byte, er
 	return data, err
 }
 
-func syncReadWriteReqEx2(group uint32, offset uint32, readLength uint32, dataToWrite []byte) (data []byte, err error) {
+func (connection *Connection) syncReadWriteReqEx2(group uint32, offset uint32, readLength uint32, dataToWrite []byte) (data []byte, err error) {
 	data = make([]byte, readLength)
 	cDataToRead := C.CString(string(data))
 	defer C.free(unsafe.Pointer(cDataToRead))
@@ -197,7 +185,7 @@ func syncReadWriteReqEx2(group uint32, offset uint32, readLength uint32, dataToW
 	return data, err
 }
 
-func syncAddDeviceNotificationReqEx(handle uint32, size uint32, transMode AdsTransMode, maxDelay uint32, cycleTime uint32) (uint32, error) {
+func (connection *Connection) syncAddDeviceNotificationReqEx(handle uint32, size uint32, transMode AdsTransMode, maxDelay uint32, cycleTime uint32, user uint32) (uint32, error) {
 	notAttrib := AdsNotificationAttrib{}
 	notAttrib.NMaxDelay = uint32(maxDelay / 100.0)
 	notAttrib.NCycleTime = uint32(cycleTime / 100.0)
@@ -213,7 +201,7 @@ func syncAddDeviceNotificationReqEx(handle uint32, size uint32, transMode AdsTra
 		C.ulong(handle),
 		(*C.AdsNotificationAttrib)(unsafe.Pointer(&notAttrib)),
 		(C.PAdsNotificationFuncEx)(C.notificationFun),
-		C.ulong(0),
+		C.ulong(user),
 		&hNotification))
 	notHandle := uint32(hNotification)
 	client.adsLock.Unlock()
@@ -224,7 +212,7 @@ func syncAddDeviceNotificationReqEx(handle uint32, size uint32, transMode AdsTra
 	return notHandle, nil
 }
 
-func syncDelDeviceNotificationReqEx(handle uint32) (err error) {
+func (connection *Connection) syncDelDeviceNotificationReqEx(handle uint32) (err error) {
 	client.adsLock.Lock()
 	nErrInt := int(C.AdsSyncDelDeviceNotificationReqEx(
 		C.long(client.port),
@@ -237,15 +225,15 @@ func syncDelDeviceNotificationReqEx(handle uint32) (err error) {
 	return
 }
 
-func writeBuffArrayEx(handle uint32, data []byte) {
-	syncWriteReqEx(
+func (connection *Connection) writeBuffArrayEx(handle uint32, data []byte) error {
+	return connection.syncWriteReqEx(
 		ADSIGRP_SYM_VALBYHND,
 		uint32(handle),
 		data)
 }
 
-func getHandleByString(variableName string) (handle uint32, err error) {
-	handleData, err := syncReadWriteReqEx2(
+func (connection *Connection) getHandleByString(variableName string) (handle uint32, err error) {
+	handleData, err := connection.syncReadWriteReqEx2(
 		ADSIGRP_SYM_HNDBYNAME,
 		0x0,
 		uint32(unsafe.Sizeof(handle)),
@@ -257,18 +245,18 @@ func getHandleByString(variableName string) (handle uint32, err error) {
 	return handle, nil
 }
 
-func getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
-	data, err = syncReadReqEx2(
+func (connection *Connection) getValueByHandle(handle uint32, size uint32) (data []byte, err error) {
+	data, err = connection.syncReadReqEx2(
 		ADSIGRP_SYM_VALBYHND,
 		uint32(handle),
 		uint32(size))
 	return data, err
 }
 
-func releaseHandle(handle uint32) error {
+func (connection *Connection) releaseHandle(handle uint32) error {
 	a := make([]byte, 4)
 	binary.LittleEndian.PutUint32(a, uint32(handle))
-	err := syncWriteReqEx(
+	err := connection.syncWriteReqEx(
 		ADSIGRP_SYM_RELEASEHND,
 		0x0,
 		a)
@@ -279,8 +267,8 @@ func releaseHandle(handle uint32) error {
 	return nil
 }
 
-func releaseNotificationeHandle(handle uint32) (err error) {
-	syncDelDeviceNotificationReqEx(handle)
+func (connection *Connection) releaseNotificationeHandle(handle uint32) (err error) {
+	connection.syncDelDeviceNotificationReqEx(handle)
 	if err != nil {
 		// conn.notificationHandles[handle].NotificationHandle = 0
 		return fmt.Errorf("notification handle not deleted %d err: %w", handle, err)
@@ -288,7 +276,7 @@ func releaseNotificationeHandle(handle uint32) (err error) {
 	return nil
 }
 
-func syncReadStateReqEx() (adsState int, deviceState int, err error) {
+func (connection *Connection) syncReadStateReqEx() (adsState int, deviceState int, err error) {
 	cAdsState := C.ushort(0)
 	cDeviceState := C.ushort(0)
 	client.adsLock.Lock()
