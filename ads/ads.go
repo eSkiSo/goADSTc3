@@ -264,6 +264,7 @@ func (connection *Connection) Write(variable string, value string) error {
 		connection.symbolLock.Unlock()
 		return fmt.Errorf("symbol not found")
 	}
+	connection.symbolLock.Unlock()
 	symbol.Write(value)
 	connection.symbolLock.Unlock()
 	return nil
