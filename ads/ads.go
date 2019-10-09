@@ -214,7 +214,7 @@ ForLoop:
 			symbol := notification.symbol
 			symbol.connection.symbolLock.Lock()
 			symbol.parse(s.value, 0)
-			hmiNotification := NotificationStruct{Variable: symbol.FullName, Value: symbol.getJSON(true), TimeStamp: s.timestamp}
+			hmiNotification := NotificationStruct{Variable: symbol.FullName, Value: symbol.GetJSON(true), TimeStamp: s.timestamp}
 			symbol.connection.Update <- hmiNotification
 			symbol.clearChanged()
 			symbol.connection.symbolLock.Unlock()
