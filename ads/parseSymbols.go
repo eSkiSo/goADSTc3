@@ -162,7 +162,7 @@ func (connection *Connection) uploadSymbolInfoDataTypes(length uint32) (err erro
 		0x0,
 		length)
 	if errInt != nil {
-		err = fmt.Errorf("error doing DT UPLOAD %d", err)
+		return fmt.Errorf("error doing DT UPLOAD %d", err)
 	}
 	buff := bytes.NewBuffer(data)
 
