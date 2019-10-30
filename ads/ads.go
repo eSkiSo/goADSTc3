@@ -101,12 +101,12 @@ func AddLocalConnection(ctx context.Context) (*Connection, error) {
 	connection.getLocalAddressEx()
 	fmt.Printf("local connection at %d %d %d \n", client.port, connection.addr.Port, connection.addr.NetId[0])
 	connection.addr.Port = 851
+	client.connections = append(client.connections, connection)
 
 	err := connection.initializeConnVariables()
 	if err != nil {
 		return nil, err
 	}
-	client.connections = append(client.connections, connection)
 	return connection, nil
 }
 
@@ -129,13 +129,12 @@ func AddRemoteConnection(ctx context.Context, netID string, port uint16) (*Conne
 		connection.addr.NetId[4],
 		connection.addr.NetId[5])
 	connection.addr.Port = port
-
+	client.connections = append(client.connections, connection)
 	err := connection.initializeConnVariables()
 	if err != nil {
 		return nil, err
 	}
 
-	client.connections = append(client.connections, connection)
 	return connection, nil
 }
 
