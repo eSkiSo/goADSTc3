@@ -1,7 +1,16 @@
-// Created by cgo -godefs - DO NOT EDIT
-// cgo.exe -godefs godefs.go
-
 package ads
+
+//revive:disable
+type AdsTransMode uint32
+
+// ADS Codes for notification style
+const (
+	ADSTRANS_NOTRANS     AdsTransMode = 0
+	ADSTRANS_CLIENTCYCLE AdsTransMode = 1
+	ADSTRANS_CLIENTONCHA AdsTransMode = 2
+	ADSTRANS_SERVERCYCLE AdsTransMode = 3
+	ADSTRANS_SERVERONCHA AdsTransMode = 4
+)
 
 const ANYSIZE_ARRAY = 1
 
@@ -157,7 +166,7 @@ const ADSERR_CLIENT_SYNCTIMEOUT = (0x45 + ERR_ADSERRS)          // timeout elaps
 const ADSERR_CLIENT_W32ERROR = (0x46 + ERR_ADSERRS)             // error in win32 subsystem
 const ADSERR_CLIENT_TIMEOUTINVALID = (0x47 + ERR_ADSERRS)       // ?
 const ADSERR_CLIENT_PORTNOTOPEN = (0x48 + ERR_ADSERRS)          // ads dll
-const ADSERR_CLIENT_NOAMSADDR = (0x49 + ERR_ADSERRS)            // ads dll
+const ADSERR_CLIENT_NOamsAddr = (0x49 + ERR_ADSERRS)            // ads dll
 const ADSERR_CLIENT_SYNCINTERNAL = (0x50 + ERR_ADSERRS)         // internal error in ads sync
 const ADSERR_CLIENT_ADDHASH = (0x51 + ERR_ADSERRS)              // hash table overflow
 const ADSERR_CLIENT_REMOVEHASH = (0x52 + ERR_ADSERRS)           // key not found in hash table
@@ -165,12 +174,10 @@ const ADSERR_CLIENT_NOMORESYM = (0x53 + ERR_ADSERRS)            // no more symbo
 const ADSERR_CLIENT_SYNCRESINVALID = (0x54 + ERR_ADSERRS)       // invalid response received
 const ADSERR_CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS)       // sync port is locked
 
-type AmsNetId struct {
-	B [6]uint8
-}
+type amsNetId [6]uint8
 
-type AmsAddr struct {
-	NetId AmsNetId
+type amsAddr struct {
+	NetId amsNetId
 	Port  uint16
 }
 
@@ -194,7 +201,7 @@ type AdsNotificationHeader struct {
 	Data          [1]uint8
 }
 
-type AdsSymbolEntry struct {
+type adsSymbolEntry struct {
 	EntryLength   uint32
 	IGroup        uint32
 	IOffs         uint32
@@ -206,7 +213,7 @@ type AdsSymbolEntry struct {
 	CommentLength uint16
 }
 
-type ShortAdsSymbolEntry struct {
+type ShortadsSymbolEntry struct {
 	IGroup        uint32
 	IOffs         uint32
 	Size          uint32
@@ -237,12 +244,12 @@ type AdsDatatypeEntry struct {
 	SubItems      uint16
 }
 
-type AdsSymbolUploadInfo struct {
+type adsSymbolUploadInfo struct {
 	NSymbols uint32
 	NSymSize uint32
 }
 
-type AdsSymbolUploadInfo2 struct {
+type adsSymbolUploadInfo2 struct {
 	NSymbols        uint32
 	NSymSize        uint32
 	NDatatypes      uint32
@@ -251,7 +258,7 @@ type AdsSymbolUploadInfo2 struct {
 	NUsedDynSymbols uint32
 }
 
-type AdsSymbolInfoByName struct {
+type adsSymbolInfoByName struct {
 	IndexGroup  uint32
 	IndexOffset uint32
 	CbLength    uint32
@@ -262,3 +269,5 @@ const (
 	AMSEVENT_ROUTERSTART   = 1
 	AMSEVENT_ROUTERREMOVED = 2
 )
+
+//revive:enable

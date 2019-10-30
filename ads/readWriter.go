@@ -9,27 +9,29 @@ import (
 	"time"
 )
 
-//func (dt *ADSSymbol) parse(offset uint32, data []byte) { /*{{{*/
-func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
+func (symbol *Symbol) parse(data []byte, offset int) (string, error) {
 	start := offset
-	stop := start + int(dt.Length)
+	stop := start + int(symbol.Length)
+	if start+int(symbol.Length) > len(data) {
+		stop = len(data)
+	}
 
-	if len(dt.Childs) > 0 {
-		for _, value := range dt.Childs {
+	var newValue = "nil"
+	if len(symbol.Childs) > 0 {
+		for _, value := range symbol.Childs {
 			value.parse(data[offset:stop], int(value.Offset))
 		}
+		newValue = symbol.GetJSON(false)
 	} else {
-		var newValue = "nil"
-
-		if len(data) < int(dt.Length) {
+		if len(data) < int(symbol.Length) {
 			fmt.Printf("Incoming data is to small, !0<%d<%d<%d", start, stop, len(data))
-			return
+			return "", nil
 		}
 
-		switch dt.DataType {
+		switch symbol.DataType {
 		case "BOOL":
 			if stop-start != 1 {
-				return
+				return "", fmt.Errorf("BOOL Size Wrong")
 			}
 			if data[start:stop][0] > 0 {
 				newValue = "True"
@@ -38,7 +40,7 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			}
 		case "BYTE", "USINT": // Unsigned Short INT 0 to 255
 			if stop-start != 1 {
-				return
+				return "", fmt.Errorf("BYTE Size Wrong")
 			}
 			buf := bytes.NewBuffer(data[start:stop])
 			var i uint8
@@ -46,7 +48,7 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = strconv.FormatInt(int64(i), 10)
 		case "SINT": // Short INT -128 to 127
 			if stop-start != 1 {
-				return
+				return "", fmt.Errorf("SINT Size Wrong")
 			}
 			buf := bytes.NewBuffer(data[start:stop])
 			var i int8
@@ -54,19 +56,19 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = strconv.FormatInt(int64(i), 10)
 		case "UINT", "WORD":
 			if stop-start != 2 {
-				return
+				return "", fmt.Errorf("WORD Size Wrong")
 			}
 			i := binary.LittleEndian.Uint16(data[start:stop])
 			newValue = strconv.FormatUint(uint64(i), 10)
 		case "UDINT", "DWORD":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("DWORD Size Wrong")
 			}
 			i := binary.LittleEndian.Uint32(data[start:stop])
 			newValue = strconv.FormatUint(uint64(i), 10)
 		case "INT":
 			if stop-start != 2 {
-				return
+				return "", fmt.Errorf("INT Size Wrong")
 			}
 			buf := bytes.NewBuffer(data)
 			var i int16
@@ -75,7 +77,7 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = strconv.FormatInt(int64(i), 10)
 		case "DINT":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("DINT Size Wrong")
 			}
 			buf := bytes.NewBuffer(data[start:stop])
 			var i int32
@@ -83,14 +85,14 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = strconv.FormatInt(int64(i), 10)
 		case "REAL":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("REAL Size Wrong")
 			}
 			i := binary.LittleEndian.Uint32(data[start:stop])
 			f := math.Float32frombits(i)
 			newValue = strconv.FormatFloat(float64(f), 'f', -1, 32)
 		case "LREAL":
 			if stop-start != 8 {
-				return
+				return "", fmt.Errorf("LREAL Size Wrong")
 			}
 			i := binary.LittleEndian.Uint64(data[start:stop])
 			f := math.Float64frombits(i)
@@ -98,10 +100,16 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 		case "STRING":
 			trimmedBytes := bytes.TrimSpace(data[start:stop])
 			secondIndex := bytes.IndexByte(trimmedBytes, byte(0))
+			if secondIndex >= len(trimmedBytes) {
+				secondIndex = len(trimmedBytes)
+			}
+			if secondIndex < 0 {
+				secondIndex = len(trimmedBytes)
+			}
 			newValue = string(trimmedBytes[:(secondIndex)])
 		case "TIME":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("TIME Size Wrong")
 			}
 			i := binary.LittleEndian.Uint32(data[start:stop])
 			t := time.Unix(0, int64(uint64(i)*uint64(time.Millisecond))-int64(time.Hour))
@@ -109,7 +117,7 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = t.Truncate(time.Millisecond).Format("15:04:05.999999999")
 		case "TOD":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("TOD Size Wrong")
 			}
 			i := binary.LittleEndian.Uint32(data[start:stop])
 			t := time.Unix(0, int64(uint64(i)*uint64(time.Millisecond))-int64(time.Hour))
@@ -117,7 +125,7 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = t.Truncate(time.Millisecond).Format("15:04")
 		case "DATE":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("DATE Size Wrong")
 			}
 			i := binary.LittleEndian.Uint32(data[start:stop])
 			t := time.Unix(0, int64(uint64(i)*uint64(time.Second)))
@@ -125,45 +133,77 @@ func (dt *ADSSymbol) parse(data []byte, offset int) { /*{{{*/
 			newValue = t.Truncate(time.Millisecond).Format("2006-01-02")
 		case "DT":
 			if stop-start != 4 {
-				return
+				return "", fmt.Errorf("DT Size Wrong")
 			}
 			i := binary.LittleEndian.Uint32(data[start:stop])
 			t := time.Unix(0, int64(uint64(i)*uint64(time.Second))-int64(time.Hour))
 
 			newValue = t.Truncate(time.Millisecond).Format("2006-01-02 15:04:05")
 		default:
-			newValue = "nil"
+			return "", fmt.Errorf("Unknown format cannot parse")
 		}
-		if strcmp(dt.Value, newValue) != 0 ||
-			time.Since(dt.LastUpdateTime) > dt.MinUpdateInterval {
-			dt.LastUpdateTime = time.Now()
-			dt.Value = newValue
-			dt.Valid = true
-			dt.Changed = true
-			dt.updateChanged(true)
-
-			//fmt.Println(dt.FullName, dt.Value)
-		}
-
 	}
+	if strcmp(symbol.Value, newValue) != 0 &&
+		time.Since(symbol.LastUpdateTime) > symbol.MinUpdateInterval {
+		symbol.LastUpdateTime = time.Now()
+		symbol.Value = newValue
+		symbol.Valid = true
+		symbol.Changed = true
+		symbol.parentChanged()
+	}
+	return symbol.Value, nil
 }
 
-func (dt *ADSSymbol) updateChanged(value bool) {
-	dt.Changed = value
-	if dt.Parent != nil {
-		dt.Parent.updateChanged(value)
+func (symbol *Symbol) parentChanged() {
+	if symbol.Parent != nil {
+		symbol.Parent.parentChanged()
 	}
+	symbol.Changed = true
 }
 
-func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
+func stringArrayIncludes(vs []string, t string) bool {
+	for _, v := range vs {
+		if v == t {
+			return true
+		}
+	}
+	return false
+}
+
+var parseableTypes = []string{
+	"BOOL",
+	"BYTE",
+	"USINT",
+	"UINT",
+	"WORD",
+	"UDINT",
+	"DWORD",
+	"SINT",
+	"INT",
+	"DINT",
+	"REAL",
+	"LREAL",
+	"STRING",
+}
+
+func (symbol *Symbol) writeToNode(value string, offset int) (err error) {
 	if len(symbol.Childs) > 0 {
-		err = fmt.Errorf("Cannot write to a whole struct at once!")
+		err = fmt.Errorf("cannot write to a whole struct at once")
 		return
 	}
 
 	buf := bytes.NewBuffer([]byte{})
+	dt := symbol.DataType
 
-	switch symbol.DataType {
+	if !stringArrayIncludes(parseableTypes, symbol.DataType) {
+		dtDt := symbol.connection.datatypes[dt].DataType
+		if stringArrayIncludes(parseableTypes, dtDt) {
+			dt = symbol.connection.datatypes[dt].DataType
+		} else {
+			return fmt.Errorf("Data type not parseable %v", dtDt)
+		}
+	}
+	switch dt {
 	case "BOOL":
 		v, e := strconv.ParseBool(value)
 		if e != nil {
@@ -270,11 +310,11 @@ func (symbol *ADSSymbol) writeToNode(value string, offset int) (err error) {
 
 		newValue = t.Truncate(time.Millisecond).Format("2006-01-02 15:04:05")*/
 	default:
-		err = fmt.Errorf("Datatype '%s' write is not implemented yet!", symbol.DataType)
+		err = fmt.Errorf("datatype '%s' write is not implemented yet", symbol.DataType)
 		return
 	}
-	symbol.writeBuffArray(buf.Bytes())
-	return nil
+	err = symbol.connection.writeBuffArrayEx(symbol.Handle, buf.Bytes())
+	return err
 }
 
 func strcmp(a, b string) int {

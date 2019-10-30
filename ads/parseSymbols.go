@@ -9,25 +9,25 @@ import (
 	"unsafe"
 )
 
-type ADSSymbolUploadDataType struct {
+type symbolUploadDataType struct {
 	DatatypeEntry AdsDatatypeEntry
 	Name          string
 	DataType      string
 	Comment       string
 
-	Childs map[string]*ADSSymbolUploadDataType
+	Childs map[string]*symbolUploadDataType
 }
 
-type ADSSymbolUploadSymbol struct {
-	SymbolEntry AdsSymbolEntry
+type adsSymbolUploadSymbol struct {
+	SymbolEntry adsSymbolEntry
 	Name        string
 	DataType    string
 	Comment     string
-	Childs      map[string]*ADSSymbolUploadDataType
+	Childs      map[string]*symbolUploadDataType
 }
 
-func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, err error) {
-	data, err := conn.adsSyncReadReqEx2(
+func (connection *Connection) getSymbolUploadInfo() (uploadInfo adsSymbolUploadInfo2, err error) {
+	data, err := connection.syncReadReqEx2(
 		ADSIGRP_SYM_UPLOADINFO2,
 		0x0,
 		uint32(unsafe.Sizeof(uploadInfo)))
@@ -36,21 +36,17 @@ func (conn *Connection) getSymbolUploadInfo() (uploadInfo AdsSymbolUploadInfo2, 
 	return
 }
 
-func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
-	res, err := conn.adsSyncReadReqEx2(ADSIGRP_SYM_UPLOAD, 0, length)
+func (connection *Connection) uploadSymbolInfoSymbols(length uint32) error {
+	res, err := connection.syncReadReqEx2(ADSIGRP_SYM_UPLOAD, 0, length)
 	if err != nil {
-		return err
+		return fmt.Errorf("error doing ADSIGRP_SYM_UPLOAD %d", err)
 	}
-
-	// if conn.Symbols == nil {
-	// 	conn.Symbols = map[string]*ADSSymbol{}
-	// }
 
 	var buff = bytes.NewBuffer(res)
 
 	for buff.Len() > 0 {
 		begBuff := buff.Len()
-		result := AdsSymbolEntry{}
+		result := adsSymbolEntry{}
 		binary.Read(buff, binary.LittleEndian, &result)
 
 		name := make([]byte, result.NameLength)
@@ -64,8 +60,13 @@ func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
 		binary.Read(buff, binary.LittleEndian, comment)
 		buff.Next(1)
 
-		item := ADSSymbolUploadSymbol{}
+		item := adsSymbolUploadSymbol{}
 		item.Name = string(name)
+		// if dataType, ok := connection.datatypes[string(dt)]; ok {
+		// 	item.DataType = dataType.DataType
+		// } else {
+		// 	item.DataType = string(dt)
+		// }
 		item.DataType = string(dt)
 		item.Comment = string(comment)
 		item.SymbolEntry = result
@@ -76,7 +77,7 @@ func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
 		}
 		endBuff := buff.Len()
 
-		conn.addSymbol(&item)
+		connection.addSymbol(&item)
 
 		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
 
@@ -84,13 +85,14 @@ func (conn *Connection) uploadSymbolInfoSymbols(length uint32) error {
 	return err
 }
 
-func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
-	sym := &ADSSymbol{}
+func (connection *Connection) addSymbol(symbol *adsSymbolUploadSymbol) {
+	sym := &Symbol{}
 
-	sym.Connection = conn
-	sym.Self = sym
+	sym.connection = connection
+	// sym.Self = sym
 	sym.Name = symbol.Name
 	sym.LastUpdateTime = time.Now()
+	sym.MinUpdateInterval = time.Millisecond * 50
 	sym.FullName = symbol.Name
 	sym.DataType = symbol.DataType
 	sym.Comment = symbol.Comment
@@ -99,24 +101,16 @@ func (conn *Connection) addSymbol(symbol *ADSSymbolUploadSymbol) {
 	sym.Group = symbol.SymbolEntry.IGroup
 	sym.Offset = symbol.SymbolEntry.IOffs
 
-	//fmt.Println(symbol.Name)
-
-	dt, ok := conn.datatypes[symbol.DataType]
+	dt, ok := connection.datatypes[symbol.DataType]
 	if ok {
-		//sym.Childs = dt.addOffset(sym.Name, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
 		sym.Childs = dt.addOffset(sym, symbol.SymbolEntry.IGroup, symbol.SymbolEntry.IOffs)
-
 	}
-
-	conn.Symbols[symbol.Name] = sym
-	// for _, child := range sym.Childs {
-	// 	conn.Symbols[child.FullName] = *child
-	// }
+	connection.symbols[symbol.Name] = sym
 	return
 }
 
-func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, offset uint32) (childs map[string]*ADSSymbol) {
-	childs = map[string]*ADSSymbol{}
+func (data *symbolUploadDataType) addOffset(parent *Symbol, group uint32, offset uint32) (childs map[string]*Symbol) {
+	childs = map[string]*Symbol{}
 
 	var path string
 
@@ -128,11 +122,12 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 			path = fmt.Sprint(parent.Name, segment.Name)
 		}
 
-		child := ADSSymbol{}
-		child.Self = &child
-		child.Connection = parent.Connection
-
+		child := Symbol{}
+		// child.Self = &child
+		child.connection = parent.connection
 		child.Name = segment.Name
+		child.LastUpdateTime = time.Now()
+		child.MinUpdateInterval = time.Millisecond * 50
 		child.FullName = path
 		child.DataType = segment.DataType
 		child.Comment = segment.Comment
@@ -147,7 +142,7 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		// parent.Connection.Symbols[child.FullName] = child
 
 		// Check if subitems exist
-		dt, ok := parent.Connection.datatypes[segment.DataType]
+		dt, ok := parent.connection.datatypes[segment.DataType]
 		if ok {
 			//log.Warn("Found sub ",segment.DataType);
 			child.Childs = dt.addOffset(&child, child.Group, child.Offset)
@@ -155,38 +150,37 @@ func (data *ADSSymbolUploadDataType) addOffset(parent *ADSSymbol, group uint32, 
 		}
 
 		childs[key] = &child
-		child.Connection.Symbols[child.FullName] = &child
+		parent.connection.symbols[child.FullName] = &child
 	}
 
 	return
 }
 
-func (conn *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
-	data, errInt := conn.adsSyncReadReqEx2(
+func (connection *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
+	data, errInt := connection.syncReadReqEx2(
 		ADSIGRP_SYM_DT_UPLOAD,
 		0x0,
 		length)
 	if errInt != nil {
-		err = fmt.Errorf("error doing DT UPLOAD %v", err)
+		return fmt.Errorf("error doing DT UPLOAD %d", err)
 	}
 	buff := bytes.NewBuffer(data)
 
-	if conn.datatypes == nil {
-		conn.datatypes = map[string]ADSSymbolUploadDataType{}
+	if connection.datatypes == nil {
+		connection.datatypes = map[string]symbolUploadDataType{}
 	}
 
 	for buff.Len() > 0 {
 		header, _ := decodeSymbolUploadDataType(buff, "")
-		conn.datatypes[header.Name] = header
+		connection.datatypes[header.Name] = header
 	}
 	return
-	//   log.Warn(hex.Dump(header));
 }
 
-func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSymbolUploadDataType, err error) {
+func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header symbolUploadDataType, err error) {
 
 	result := AdsDatatypeEntry{}
-	header = ADSSymbolUploadDataType{}
+	header = symbolUploadDataType{}
 
 	totalSize := data.Len()
 
@@ -234,7 +228,7 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSy
 
 	buff := bytes.NewBuffer(childs)
 	if header.Childs == nil {
-		header.Childs = map[string]*ADSSymbolUploadDataType{}
+		header.Childs = map[string]*symbolUploadDataType{}
 	}
 	if header.DatatypeEntry.ArrayDim > 0 {
 		// Childs is an array
@@ -262,8 +256,8 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header ADSSy
 	return
 }
 
-func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (childs map[string]*ADSSymbolUploadDataType) {
-	childs = map[string]*ADSSymbolUploadDataType{}
+func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (childs map[string]*symbolUploadDataType) {
+	childs = map[string]*symbolUploadDataType{}
 
 	if len(levels) < 1 {
 		return
@@ -277,7 +271,7 @@ func makeArrayChilds(levels []AdsDatatypeArrayInfo, dt string, size uint32) (chi
 	for i := level.LBound; i < level.LBound+level.Elements; i++ {
 		name := fmt.Sprint("[", i, "]")
 
-		child := ADSSymbolUploadDataType{}
+		child := symbolUploadDataType{}
 		child.Name = name
 		child.DataType = dt
 		child.DatatypeEntry.Offs = offset
