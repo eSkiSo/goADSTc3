@@ -78,7 +78,7 @@ var client *Client
 
 func init() {
 	client = &Client{}
-	client.update = make(chan updateStruct, 100)
+	client.update = make(chan updateStruct)
 	port := portOpenEx()
 	client.port = port
 	client.ctx, client.cancel = context.WithCancel(context.Background())
@@ -87,7 +87,7 @@ func init() {
 
 func initConnection() *Connection {
 	connection := &Connection{}
-	connection.Update = make(chan NotificationStruct, 100)
+	connection.Update = make(chan NotificationStruct)
 	connection.symbols = make(map[string]*Symbol)
 	connection.datatypes = make(map[string]symbolUploadDataType)
 	connection.handles = make(map[uint32]string)
