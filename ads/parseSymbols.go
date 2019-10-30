@@ -39,7 +39,7 @@ func (connection *Connection) getSymbolUploadInfo() (uploadInfo adsSymbolUploadI
 func (connection *Connection) uploadSymbolInfoSymbols(length uint32) error {
 	res, err := connection.syncReadReqEx2(ADSIGRP_SYM_UPLOAD, 0, length)
 	if err != nil {
-		return err
+		return fmt.Errorf("error doing ADSIGRP_SYM_UPLOAD %d", err)
 	}
 
 	var buff = bytes.NewBuffer(res)
