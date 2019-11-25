@@ -45,7 +45,7 @@ func notificationFun(addr *C.AmsAddr, notification *C.AdsNotificationHeader, use
 	notificationHeader := &AdsNotificationHeader{}
 	binary.Read(buf, binary.LittleEndian, notificationHeader)
 	cBytes := C.GoBytes(unsafe.Pointer(&notification.data), C.int(notification.cbSampleSize))
-	unixTime := time.Unix(int64(notificationHeader.Timestamp/10000000)-11644473600, 0)
+	unixTime := time.Unix(0,int64((notificationHeader.Timestamp - 116444736000000000) * 100))
 	var update = updateStruct{}
 	update.notificationIndex = int(user)
 	update.value = cBytes

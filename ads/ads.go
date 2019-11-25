@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -82,6 +83,7 @@ func init() {
 	port := portOpenEx()
 	client.port = port
 	client.ctx, client.cancel = context.WithCancel(context.Background())
+
 	go readWritePump(client.ctx)
 }
 
@@ -352,12 +354,18 @@ func (symbol *Symbol) GetJSON(onlyChanged bool) string {
 
 var openBracketRegex = regexp.MustCompile(`\[`)
 var closeBracketRegex = regexp.MustCompile(`\]`)
+var stringsList = map[string]struct{}{"STRING": struct{}{}, "TIME": struct{}{}, "TOD": struct{}{}, "DATE": struct{}{}, "DT": struct{}{}}
 
 // parseSymbol returns JSON interface for symbol
 func (symbol *Symbol) parseSymbol(onlyChanged bool) (rData interface{}) {
 	if len(symbol.Childs) == 0 {
-		rData = symbol.Value
-		// symbol.Changed = false
+		if symbol.DataType == "BOOL" {
+			rData, _ = strconv.ParseBool(symbol.Value)
+		} else if _, ok := stringsList[symbol.DataType]; ok {
+			rData = symbol.Value
+		} else {
+			rData, _ = strconv.ParseFloat(symbol.Value, 64)
+		}
 	} else {
 		localMap := make(map[string]interface{})
 		for _, child := range symbol.Childs {
