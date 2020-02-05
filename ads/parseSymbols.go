@@ -156,7 +156,7 @@ func (data *symbolUploadDataType) addOffset(parent *Symbol, group uint32, offset
 	return
 }
 
-func (connection *Connection) uploadSymbolInfoDataTypes(length uint32) (err error) {
+func (connection *Connection) uploadSymbolInfoDataTypes(length uint32) (datatypes map[string]symbolUploadDataType, err error) {
 	data, errInt := connection.syncReadReqEx2(
 		ADSIGRP_SYM_DT_UPLOAD,
 		0x0,
