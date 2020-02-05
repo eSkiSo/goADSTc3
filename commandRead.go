@@ -1,0 +1,79 @@
+package ads
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+
+	"github.com/rs/zerolog/log"
+)
+
+type readParams struct {
+	group  uint32
+	offset uint32
+	length uint32
+}
+
+type readResponse struct {
+	err  error
+	data []byte
+}
+
+func (conn *Connection) ReadGroup(params ...readParams) [][]byte {
+	returnedData := [][]byte{}
+	for index := range params {
+		returnedData[index] = []byte{}
+	}
+	return returnedData
+}
+
+func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data []byte, err error) {
+	conn.waitGroup.Add(1)
+	defer conn.waitGroup.Done()
+	request := bytes.NewBuffer([]byte{})
+	type readCommandPacket struct {
+		Group  uint32
+		Offset uint32
+		Length uint32
+	}
+	var content = readCommandPacket{
+		group,
+		offset,
+		length,
+	}
+
+	// Read	- ADS command id: 2
+
+	err = binary.Write(request, binary.LittleEndian, content)
+
+	log.Trace().
+		Interface("request", content).
+		Msgf("Request")
+
+	if err != nil {
+		log.Error().
+			Msgf("binary.Write failed: %s", err)
+	}
+
+	// Try to send the request
+	resp, err := conn.sendRequest(CommandIDRead, request.Bytes())
+	if err != nil {
+		return
+	}
+
+	// Check the result error code
+	type readResponse struct {
+		Error  ReturnCode
+		Length uint32
+	}
+	respBuff := bytes.NewBuffer(resp)
+	response := &readResponse{}
+	binary.Read(respBuff, binary.LittleEndian, response)
+	if response.Error > 0 {
+		err = fmt.Errorf("Got ADS error number %v in Read", response.Error)
+		return
+	}
+	data = make([]byte, response.Length)
+	binary.Read(respBuff, binary.LittleEndian, data)
+	return data, nil
+}
