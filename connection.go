@@ -67,6 +67,10 @@ func (conn *Connection) Connect(local bool) {
 
 	log.Debug().
 		Msgf("Dailing ip: %s NetID: %d", conn.ip, conn.port)
+	if local {
+		conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
+		conn.ip = "127.0.0.1"
+	}
 	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
 	if err != nil {
 		log.Error().

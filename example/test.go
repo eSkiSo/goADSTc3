@@ -19,7 +19,7 @@ var WaitGroup sync.WaitGroup
 
 func init() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	log.Logger = log.With().
 		Caller().
@@ -65,7 +65,7 @@ func main() {
 	// Startup the connection
 
 	connection, err := ads.NewConnection(*ip, *netid, *port, *localNetid, *localPort)
-	connection.Connect(false)
+	connection.Connect(true)
 	defer connection.Close() // Close the connection when we are done
 	if err != nil {
 		log.Error().
