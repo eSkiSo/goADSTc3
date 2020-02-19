@@ -1,10 +1,10 @@
-module github.com/stamp/goADS/example
+module gitlab.com/xilix-systems-llc/go-native-ads/example
 
-replace github.com/stamp/goADS => ../
+replace gitlab.com/xilix-systems-llc/go-native-ads/v4 => ../
 
 go 1.13
 
 require (
 	github.com/rs/zerolog v1.17.2
-	github.com/stamp/goADS v0.0.0-20151225221336-8949820dba59
+	gitlab.com/xilix-systems-llc/go-native-ads/v4 v4.0.4
 )
