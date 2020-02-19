@@ -1,4 +1,4 @@
-module ads
+module gitlab.com/xilix-systems-llc/ads/v4
 
 go 1.13
 
