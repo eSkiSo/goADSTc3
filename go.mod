@@ -1,4 +1,4 @@
-module ads/v4
+module ads
 
 go 1.13
 
