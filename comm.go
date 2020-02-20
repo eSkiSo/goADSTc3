@@ -19,7 +19,6 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 	ctx, cancel := context.WithTimeout(conn.ctx, time.Second)
 	defer cancel()
 	select {
-
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("Request aborted, deadline exceeded %w", ctx.Err())
@@ -62,15 +61,12 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 func (conn *Connection) sendRequest(command CommandID, data []byte) (response []byte, err error) {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
-
 	if conn == nil {
 		log.Error().
 			Msg("Failed to encode header, connection is nil pointer")
 		return
 	}
-
 	// First, request a new invoke id
-
 	responseMap := conn.activeRequests[command]
 	// Create a channel for the response
 	id := responseMap.id.Inc()
@@ -282,10 +278,6 @@ func receiveWorker(conn *Connection) {
 						Msg("Got broadcast, invoke: ")
 				}
 			}
-		case <-ctx.Done():
-			log.Debug().
-				Msg("Exit receiveWorker")
-			return
 		}
 	}
 
@@ -306,10 +298,6 @@ func transmitWorker(conn *Connection) {
 			log.Trace().
 				Msgf("Sending %d bytes", len(data))
 			conn.connection.Write(data)
-		case <-ctx.Done():
-			log.Debug().
-				Msg("Exit transmitWorker")
-			return
 		}
 	}
 
