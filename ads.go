@@ -21,11 +21,12 @@ func (conn *Connection) GetSymbol(symbolName string) (*Symbol, error) {
 		log.Trace().
 			Interface("symbol", localSymbol).
 			Msg("symbol got")
-		return &localSymbol, nil
+		return localSymbol, nil
 	}
 	err := fmt.Errorf("symbol does not exist")
 	log.Error().
 		Err(err).
+		Str("symbol name", symbolName).
 		Msg("error getting handle by name")
 	return nil, err
 }
@@ -35,6 +36,7 @@ func (conn *Connection) GetHandleByName(symbolName string) (handle uint32) {
 	if err != nil {
 		log.Error().
 			Err(err).
+			Str("symbol name", symbolName).
 			Msg("error getting handle by name")
 		return
 	}
@@ -119,9 +121,14 @@ func (conn *Connection) GetUploadSymbolInfoDataTypes(length uint32) (data []byte
 	return data, nil
 }
 
-func (conn *Connection) AddSymbolNotification(symbolName string) {
+func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver chan Update) {
 	symbol, err := conn.GetSymbol(symbolName)
 	if err != nil {
+		log.
+			Error().
+			Str("symbol", symbolName).
+			Err(err).
+			Msg("error getting symbol")
 		return
 	}
 	handle, err := conn.AddDeviceNotification(
@@ -131,12 +138,19 @@ func (conn *Connection) AddSymbolNotification(symbolName string) {
 		TransModeServerOnChange,
 		50*time.Millisecond,
 		50*time.Millisecond)
-	update := conn.notificationHandler(symbol)
+	update := conn.notificationHandler(symbol, updateReceiver)
 	conn.activeNotifications[handle] = update
 	return
 }
 
-func (conn *Connection) notificationHandler(symbol *Symbol) chan symbolUpdate {
+type Update struct {
+	Variable  string
+	Value     string
+	TimeStamp time.Time
+}
+
+/// Sample notification handler
+func (conn *Connection) notificationHandler(symbol *Symbol, updateReceiver chan Update) chan symbolUpdate {
 	update := make(chan symbolUpdate)
 	go func() {
 		conn.waitGroup.Add(1)
@@ -159,7 +173,18 @@ func (conn *Connection) notificationHandler(symbol *Symbol) chan symbolUpdate {
 				log.Trace().
 					Str("update", symbol.Value).
 					Msgf("update received")
-				break
+				update := Update{
+					Variable:  symbol.FullName,
+					Value:     value,
+					TimeStamp: receivedUpdate.timestamp,
+				}
+				receiveCTX, cancel := context.WithTimeout(conn.ctx, 200*time.Millisecond)
+				defer cancel()
+				select {
+				case <-receiveCTX.Done():
+					return
+				case updateReceiver <- update:
+				}
 			}
 		}
 	}()

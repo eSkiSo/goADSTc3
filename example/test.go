@@ -12,7 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/xilix-systems-llc/go-native-ads/v4"
+	ads "gitlab.com/xilix-systems-llc/go-native-ads/v4"
 )
 
 var WaitGroup sync.WaitGroup

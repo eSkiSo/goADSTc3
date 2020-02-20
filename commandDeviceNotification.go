@@ -67,11 +67,6 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 						log.Debug().
 							Msgf("Successfully delivered notification for handle %d", sample.Handle)
 						break
-					default:
-						log.Error().
-							Msgf("Failed to deliver notification for handle %d, deleting device notification", sample.Handle)
-						conn.DeleteDeviceNotification(sample.Handle)
-						break
 					}
 				}()
 			} else {

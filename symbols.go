@@ -97,8 +97,8 @@ type Symbol struct {
 	Childs map[string]*Symbol
 }
 
-func ParseUploadSymbolInfoSymbols(data []byte, datatypes map[string]SymbolUploadDataType) (symbols map[string]Symbol, err error) {
-	symbols = map[string]Symbol{}
+func ParseUploadSymbolInfoSymbols(data []byte, datatypes map[string]SymbolUploadDataType) (symbols map[string]*Symbol, err error) {
+	symbols = map[string]*Symbol{}
 	buff := bytes.NewBuffer(data)
 
 	for buff.Len() > 0 {
@@ -132,14 +132,18 @@ func ParseUploadSymbolInfoSymbols(data []byte, datatypes map[string]SymbolUpload
 		}
 		endBuff := buff.Len()
 		symbol := addSymbol(item, datatypes)
+
 		symbols[item.Name] = symbol
+		for _, child := range symbol.Childs {
+			symbols[child.FullName] = child
+		}
 		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
 	}
 	return
 }
 
-func addSymbol(symbol symbolUploadSymbol, datatypes map[string]SymbolUploadDataType) Symbol {
-	sym := Symbol{}
+func addSymbol(symbol symbolUploadSymbol, datatypes map[string]SymbolUploadDataType) *Symbol {
+	sym := &Symbol{}
 
 	// sym.connection = connection
 	// sym.Self = sym
@@ -156,7 +160,7 @@ func addSymbol(symbol symbolUploadSymbol, datatypes map[string]SymbolUploadDataT
 
 	dt, ok := datatypes[symbol.DataType]
 	if ok {
-		sym.Childs = dt.addOffset(&sym, datatypes, sym.Group, sym.Offset)
+		sym.Childs = dt.addOffset(sym, datatypes, sym.Group, sym.Offset)
 	}
 
 	return sym
@@ -191,6 +195,9 @@ func (data *SymbolUploadDataType) addOffset(parent *Symbol, datatypes map[string
 
 		// Check if subitems exist
 		dt, ok := datatypes[segment.DataType]
+		if segment.DataType == "AnalogueValue" {
+			log.Error().Msg("test")
+		}
 		if ok {
 			//log.Warn("Found sub ",segment.DataType);
 			child.Childs = dt.addOffset(&child, datatypes, child.Group, child.Offset)
