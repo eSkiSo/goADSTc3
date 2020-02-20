@@ -16,7 +16,11 @@ func (conn *Connection) GetSymbol(symbolName string) (*Symbol, error) {
 	localSymbol, ok := conn.symbols[symbolName]
 	if ok {
 		if localSymbol.Handle == 0 {
-			localSymbol.Handle = conn.GetHandleByName(symbolName)
+			handle, err := conn.GetHandleByName(symbolName)
+			if err != nil {
+				return nil, err
+		}
+			localSymbol.Handle = handle
 		}
 		log.Trace().
 			Interface("symbol", localSymbol).
@@ -31,59 +35,62 @@ func (conn *Connection) GetSymbol(symbolName string) (*Symbol, error) {
 	return nil, err
 }
 
-func (conn *Connection) GetHandleByName(symbolName string) (handle uint32) {
+func (conn *Connection) GetHandleByName(symbolName string) (handle uint32, err error) {
 	resp, err := conn.WriteRead(uint32(GroupSymbolHandleByName), 0, 4, []byte(symbolName))
 	if err != nil {
 		log.Error().
 			Err(err).
 			Str("symbol name", symbolName).
 			Msg("error getting handle by name")
-		return
+		return 0, err
 	}
 	handle = binary.LittleEndian.Uint32(resp)
-	return
+	return handle, err
 }
 
-func (conn *Connection) WriteToSymbol(symbolName string, value string) {
+func (conn *Connection) WriteToSymbol(symbolName string, value string) error {
 	symbol, err := conn.GetSymbol(symbolName)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("error getting symbol")
-		return
+		return err
 	}
 	data, err := symbol.writeToNode(value, 0, conn.datatypes)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("error during write to symbol")
+		return err
 	}
 	conn.Write(uint32(GroupSymbolValueByHandle), symbol.Handle, data)
+	return nil
 }
 
-func (conn *Connection) ReadFromSymbol(symbolName string) string {
+func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 	symbol, err := conn.GetSymbol(symbolName)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("error getting symbol")
+		return "", err
 	}
 	data, err := conn.Read(uint32(GroupSymbolValueByHandle), symbol.Handle, symbol.Length)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("error during read symbol")
-		return ""
+		return "", err
 	}
 	value, err := symbol.parse(data, 0)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("error during parse symbol")
-		return ""
+		return "", err
 	}
 	symbol.Value = value
-	return value
+	return value, nil
 }
 
 func (conn *Connection) GetSymbolUploadInfo() (uploadInfo SymbolUploadInfo, err error) {
@@ -121,7 +128,7 @@ func (conn *Connection) GetUploadSymbolInfoDataTypes(length uint32) (data []byte
 	return data, nil
 }
 
-func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver chan Update) {
+func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver chan Update) error {
 	symbol, err := conn.GetSymbol(symbolName)
 	if err != nil {
 		log.
@@ -129,7 +136,7 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 			Str("symbol", symbolName).
 			Err(err).
 			Msg("error getting symbol")
-		return
+		return err
 	}
 	handle, err := conn.AddDeviceNotification(
 		uint32(GroupSymbolValueByHandle),
