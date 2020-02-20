@@ -19,7 +19,7 @@ func (conn *Connection) GetSymbol(symbolName string) (*Symbol, error) {
 			handle, err := conn.GetHandleByName(symbolName)
 			if err != nil {
 				return nil, err
-		}
+			}
 			localSymbol.Handle = handle
 		}
 		log.Trace().
@@ -143,11 +143,14 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 		symbol.Handle,
 		symbol.Length,
 		TransModeServerOnChange,
-		50*time.Millisecond,
-		50*time.Millisecond)
+		30*time.Millisecond,
+		30*time.Millisecond)
+	if err != nil {
+		return err
+	}
 	update := conn.notificationHandler(symbol, updateReceiver)
 	conn.activeNotifications[handle] = update
-	return
+	return nil
 }
 
 type Update struct {

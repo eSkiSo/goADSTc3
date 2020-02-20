@@ -34,11 +34,10 @@ func (conn *Connection) AddDeviceNotification(
 		offset,
 		length,
 		uint32(transmissionMode),
-		uint32(maxDelay.Milliseconds()),  // 1 = 1ms (alt 100ns?)
-		uint32(cycleTime.Milliseconds()), // 1 = 1ms
+		uint32(maxDelay.Nanoseconds() / 100),  // 1 = 1ms (alt 100ns?)
+		uint32(cycleTime.Nanoseconds() / 100), // 1 = 1ms
 		[16]byte{},
 	}
-
 	err = binary.Write(request, binary.LittleEndian, content)
 	if err != nil {
 		log.Error().
@@ -55,15 +54,19 @@ func (conn *Connection) AddDeviceNotification(
 	}
 	respBuffer := bytes.NewBuffer(resp)
 	notificationResponse := addDeviceNotificationResponse{}
-	// Try to send the request
 	err = binary.Read(respBuffer, binary.LittleEndian, &notificationResponse)
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("Added notification handler, FAILED: ")
+		return 0, err
+	}
+	if notificationResponse.Error != 0 {
+		log.Error().
+			Uint32("Error Number", uint32(notificationResponse.Error)).
+			Msg("Added notification handler, FAILED: ")
 		return 0, fmt.Errorf("unable to create notification worker %v", err)
 	}
-
 	log.Trace().
 		Uint32("handle", handle).
 		Msg("Added notification handler: ")
