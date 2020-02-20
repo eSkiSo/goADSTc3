@@ -215,6 +215,10 @@ func receiveWorker(conn *Connection) {
 	defer cancel()
 	for {
 		select {
+		case <-ctx.Done():
+			log.Debug().
+				Msg("Exit receiveWorker")
+			return
 		case data := <-read:
 			log.Trace().
 				Msg("in read")
@@ -229,6 +233,7 @@ func receiveWorker(conn *Connection) {
 			switch header.Command {
 			case CommandIDDeviceNotification:
 				conn.DeviceNotification(conn.ctx, adsData)
+				break
 			case CommandIDReadState:
 				type readStateResponse struct {
 					Error ReturnCode
@@ -293,6 +298,10 @@ func transmitWorker(conn *Connection) {
 	defer cancel()
 	for {
 		select {
+		case <-ctx.Done():
+			log.Debug().
+				Msg("Exit transmitWorker")
+			return
 		case data := <-conn.sendChannel:
 			log.Trace().
 				Msgf("Sending %d bytes", len(data))
