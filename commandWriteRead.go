@@ -40,6 +40,7 @@ func (conn *Connection) WriteRead(group uint32, offset uint32, readLength uint32
 
 	if err != nil {
 		log.Error().
+			Err(err).
 			Msgf("binary.Write failed: %s", err)
 	}
 
