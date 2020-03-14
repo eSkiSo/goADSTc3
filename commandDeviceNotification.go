@@ -10,6 +10,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const windowsTick int64 = 10000000
+const secToUnixEpoch int64 = 11644473600
+
 // DeviceNotification - ADS command id: 8
 func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error {
 	conn.waitGroup.Add(1)
@@ -48,24 +51,24 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 			binary.Read(data, binary.LittleEndian, &sample)
 
 			content = make([]byte, sample.Size)
+
 			data.Read(content)
 
+			timeStamp := int64(header.Timestamp)/windowsTick - secToUnixEpoch
+			notificationTime := time.Unix(timeStamp, int64(header.Timestamp)%(windowsTick)*100)
 			notification, ok := conn.activeNotifications[sample.Handle]
 			update := symbolUpdate{
 				data:      content,
-				timestamp: time.Now(),
+				timestamp: notificationTime,
 			}
 			if ok {
 				go func() {
-					ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-					defer cancel()
-					// Try to send the response to the waiting request function
 					select {
-					case <-ctx.Done():
-						return
 					case notification <- update:
 						log.Debug().
 							Msgf("Successfully delivered notification for handle %d", sample.Handle)
+						break
+					case <-time.After(20 * time.Millisecond):
 						break
 					}
 				}()

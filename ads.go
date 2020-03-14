@@ -2,7 +2,6 @@ package ads
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"fmt"
 	"time"
@@ -165,11 +164,9 @@ func (conn *Connection) notificationHandler(symbol *Symbol, updateReceiver chan 
 	go func() {
 		conn.waitGroup.Add(1)
 		defer conn.waitGroup.Done()
-		ctx, cancel := context.WithCancel(conn.ctx)
-		defer cancel()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-conn.ctx.Done():
 				return
 			case receivedUpdate := <-update:
 				value, err := symbol.parse(receivedUpdate.data, 0)
@@ -188,12 +185,13 @@ func (conn *Connection) notificationHandler(symbol *Symbol, updateReceiver chan 
 					Value:     value,
 					TimeStamp: receivedUpdate.timestamp,
 				}
-				receiveCTX, cancel := context.WithTimeout(conn.ctx, 200*time.Millisecond)
-				defer cancel()
 				select {
-				case <-receiveCTX.Done():
-					return
+				case <-conn.ctx.Done():
+					break
 				case updateReceiver <- update:
+				case <-time.After(250 * time.Millisecond):
+				default:
+					break
 				}
 			}
 		}
