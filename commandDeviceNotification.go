@@ -54,6 +54,8 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 			data.Read(content)
 			conn.activeNotificationLock.Lock()
 			notification, ok := conn.activeNotifications[sample.Handle]
+			timeStamp := int64(header.Timestamp)/windowsTick - secToUnixEpoch
+			notificationTime := time.Unix(timeStamp, int64(header.Timestamp)%(windowsTick)*100)
 			update := symbolUpdate{
 				data:      content,
 				timestamp: notificationTime,
