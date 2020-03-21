@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -107,7 +106,6 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 		return nil, ctx.Err()
 	case response = <-responseMap.response[id]:
 		return response, nil
-	case <-time.After(250 * time.Millisecond):
 	}
 	return
 }
@@ -119,7 +117,9 @@ func listen(conn *Connection) <-chan []byte {
 		tmp := make([]byte, 256)
 		for {
 		readLoop:
-			for { // using small tmo buffer for demonstrating
+			for {
+				ctx, cancel := context.WithCancel(conn.ctx)
+				defer cancel()
 				select {
 				case <-ctx.Done():
 					log.Info().
@@ -149,7 +149,6 @@ func listen(conn *Connection) <-chan []byte {
 								Msg("EOF Error")
 							//break readLoop
 						}
-
 						break
 					}
 				}
@@ -199,7 +198,6 @@ func listen(conn *Connection) <-chan []byte {
 				receiveChan = c
 			}
 			select {
-			case <-time.After(250 * time.Millisecond):
 			case receiveChan <- data:
 			}
 
@@ -251,11 +249,11 @@ func (conn *Connection) receiveWorker() {
 				//conn.activeRequestLock.Lock()
 				if responseMap, ok := conn.activeRequests[header.Command]; ok {
 					if response, ok := responseMap.response[header.InvokeID]; ok {
-						ctx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+						ctx, cancel := context.WithCancel(conn.ctx)
 						defer cancel()
 						// Try to send the response to the waiting request function
 						select {
-						case <-conn.ctx.Done():
+						case <-ctx.Done():
 							log.Info().
 								Uint32("id", header.InvokeID).
 								Interface("command", header.Command).
@@ -288,8 +286,10 @@ func (conn *Connection) transmitWorker() {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
 	for {
+		ctx, cancel := context.WithCancel(conn.ctx)
+		defer cancel()
 		select {
-		case <-conn.ctx.Done():
+		case <-ctx.Done():
 			log.Debug().
 				Msg("Exit transmitWorker")
 			return
