@@ -109,11 +109,20 @@ func ParseUploadSymbolInfoSymbols(data []byte, datatypes map[string]SymbolUpload
 		name := make([]byte, result.NameLength)
 		dt := make([]byte, result.TypeLength)
 		comment := make([]byte, result.CommentLength)
-		binary.Read(buff, binary.LittleEndian, name)
+		err := binary.Read(buff, binary.LittleEndian, name)
+		if err != nil {
+			log.Error().Err(err).Msg("error during binary read")
+		}
 		buff.Next(1)
 		binary.Read(buff, binary.LittleEndian, dt)
+		if err != nil {
+			log.Error().Err(err).Msg("error during binary read")
+		}
 		buff.Next(1)
 		binary.Read(buff, binary.LittleEndian, comment)
+		if err != nil {
+			log.Error().Err(err).Msg("error during binary read")
+		}
 		buff.Next(1)
 		if err != nil {
 			log.Error().
@@ -123,30 +132,35 @@ func ParseUploadSymbolInfoSymbols(data []byte, datatypes map[string]SymbolUpload
 		item := symbolUploadSymbol{}
 		item.Name = string(name)
 		item.DataType = string(dt)
-		item.Comment = string(comment)
-		item.SymbolEntry = result
 		if len(item.DataType) >= 6 {
 			if item.DataType[:6] == "STRING" {
 				item.DataType = "STRING"
 			}
 		}
+		item.Comment = string(comment)
+		item.SymbolEntry = result
 		endBuff := buff.Len()
 		symbol := addSymbol(item, datatypes)
 
 		symbols[item.Name] = symbol
-		for _, child := range symbol.Childs {
-			symbols[child.FullName] = child
-		}
+		addChilds(symbol, symbols)
+
 		buff.Next(int(item.SymbolEntry.EntryLength) - (begBuff - endBuff))
 	}
 	return
 }
 
+func addChilds(symbol *Symbol, symbols map[string]*Symbol) {
+	for _, child := range symbol.Childs {
+		if _, ok := symbols[child.FullName]; !ok {
+			symbols[child.FullName] = child
+			addChilds(child, symbols)
+		}
+	}
+}
+
 func addSymbol(symbol symbolUploadSymbol, datatypes map[string]SymbolUploadDataType) *Symbol {
 	sym := &Symbol{}
-
-	// sym.connection = connection
-	// sym.Self = sym
 	sym.Name = symbol.Name
 	sym.LastUpdateTime = time.Now()
 	sym.MinUpdateInterval = time.Millisecond * 50
@@ -213,7 +227,6 @@ func (data *SymbolUploadDataType) addOffset(parent *Symbol, datatypes map[string
 func ParseUploadSymbolInfoDataTypes(data []byte) (datatypes map[string]SymbolUploadDataType, err error) {
 	buff := bytes.NewBuffer(data)
 	datatypes = make(map[string]SymbolUploadDataType)
-
 	for buff.Len() > 0 {
 		header, _ := decodeSymbolUploadDataType(buff, "")
 		datatypes[header.Name] = header
@@ -233,17 +246,28 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header Symbo
 		fmt.Printf(hex.Dump(data.Bytes()))
 	}
 
-	binary.Read(data, binary.LittleEndian, &result)
-
+	err = binary.Read(data, binary.LittleEndian, &result)
+	if err != nil {
+		log.Error().Err(err).Msg("error during binary read")
+	}
 	name := make([]byte, result.NameLength)
 	dt := make([]byte, result.TypeLength)
 	comment := make([]byte, result.CommentLength)
 
-	binary.Read(data, binary.LittleEndian, name)
+	err = binary.Read(data, binary.LittleEndian, name)
+	if err != nil {
+		log.Error().Err(err).Msg("error during binary read")
+	}
 	data.Next(1)
-	binary.Read(data, binary.LittleEndian, dt)
+	err = binary.Read(data, binary.LittleEndian, dt)
+	if err != nil {
+		log.Error().Err(err).Msg("error during binary read")
+	}
 	data.Next(1)
-	binary.Read(data, binary.LittleEndian, comment)
+	err = binary.Read(data, binary.LittleEndian, comment)
+	if err != nil {
+		log.Error().Err(err).Msg("error during binary read")
+	}
 	data.Next(1)
 
 	header.Name = string(name)
@@ -264,7 +288,14 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header Symbo
 	}
 
 	childs := make([]byte, childLen)
-	data.Read(childs)
+	n, err := data.Read(childs)
+	if err != nil {
+		log.Error().
+			Int("read bytes", n).
+			Int("expected bytes", childLen).
+			Err(err).
+			Msg("error reading childs")
+	}
 
 	if len(childs) == 0 {
 		return
@@ -280,14 +311,24 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header Symbo
 		arrayLevels := []datatypeArrayInfo{}
 
 		for i := 0; i < int(header.DatatypeEntry.ArrayDim); i++ {
-			binary.Read(buff, binary.LittleEndian, &result)
+			err = binary.Read(buff, binary.LittleEndian, &result)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("error reading array")
+			}
 			arrayLevels = append(arrayLevels, result)
 		}
 		header.Childs = makeArrayChilds(arrayLevels, header.DataType, header.DatatypeEntry.Size)
 	} else {
 		// Childs is standard variables
 		for j := 0; j < (int)(result.SubItems); j++ {
-			child, _ := decodeSymbolUploadDataType(buff, header.Name)
+			child, err := decodeSymbolUploadDataType(buff, header.Name)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("error reading array")
+			}
 			header.Childs[child.Name] = &child
 		}
 	}

@@ -50,6 +50,8 @@ func (conn *Connection) GetHandleByName(symbolName string) (handle uint32, err e
 
 func (conn *Connection) WriteToSymbol(symbolName string, value string) error {
 	symbol, err := conn.GetSymbol(symbolName)
+	conn.symbolLock.Lock()
+	defer conn.symbolLock.Unlock()
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -69,9 +71,12 @@ func (conn *Connection) WriteToSymbol(symbolName string, value string) error {
 
 func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 	symbol, err := conn.GetSymbol(symbolName)
+	conn.symbolLock.Lock()
+	defer conn.symbolLock.Unlock()
 	if err != nil {
 		log.Error().
 			Err(err).
+			Str("symbol", symbolName).
 			Msg("error getting symbol")
 		return "", err
 	}
@@ -79,6 +84,7 @@ func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 	if err != nil {
 		log.Error().
 			Err(err).
+			Str("symbol", symbolName).
 			Msg("error during read symbol")
 		return "", err
 	}
@@ -86,6 +92,7 @@ func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 	if err != nil {
 		log.Error().
 			Err(err).
+			Str("symbol", symbolName).
 			Msg("error during parse symbol")
 		return "", err
 	}
@@ -130,6 +137,8 @@ func (conn *Connection) GetUploadSymbolInfoDataTypes(length uint32) (data []byte
 
 func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver chan Update) error {
 	symbol, err := conn.GetSymbol(symbolName)
+	conn.symbolLock.Lock()
+	defer conn.symbolLock.Unlock()
 	if err != nil {
 		log.
 			Error().
@@ -148,7 +157,9 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 	if err != nil {
 		return err
 	}
-	update := conn.notificationHandler(symbol, updateReceiver)
+	update := conn.notificationHandler(symbolName, updateReceiver)
+	conn.activeNotificationLock.Lock()
+	defer conn.activeNotificationLock.Unlock()
 	conn.activeNotifications[handle] = update
 	return nil
 }
@@ -160,18 +171,22 @@ type Update struct {
 }
 
 /// Sample notification handler
-func (conn *Connection) notificationHandler(symbol *Symbol, updateReceiver chan Update) chan symbolUpdate {
+func (conn *Connection) notificationHandler(symbolname string, updateReceiver chan Update) chan symbolUpdate {
 	update := make(chan symbolUpdate)
 	go func() {
 		conn.waitGroup.Add(1)
 		defer conn.waitGroup.Done()
-		ctx, cancel := context.WithCancel(conn.ctx)
-		defer cancel()
 		for {
+			ctx, cancel := context.WithCancel(conn.ctx)
+			defer cancel()
 			select {
 			case <-ctx.Done():
+				log.Info().
+					Msgf("exited notification handler")
 				return
 			case receivedUpdate := <-update:
+				conn.symbolLock.Lock()
+				symbol, _ := conn.symbols[symbolname]
 				value, err := symbol.parse(receivedUpdate.data, 0)
 				if err != nil {
 					log.Error().
@@ -180,6 +195,7 @@ func (conn *Connection) notificationHandler(symbol *Symbol, updateReceiver chan 
 					break
 				}
 				symbol.Value = value
+				conn.symbolLock.Unlock()
 				log.Trace().
 					Str("update", symbol.Value).
 					Msgf("update received")
@@ -192,9 +208,13 @@ func (conn *Connection) notificationHandler(symbol *Symbol, updateReceiver chan 
 				defer cancel()
 				select {
 				case <-receiveCTX.Done():
-					return
+					break
 				case updateReceiver <- update:
+					break
+				default:
+					break
 				}
+
 			}
 		}
 	}()

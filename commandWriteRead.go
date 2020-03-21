@@ -59,6 +59,6 @@ func (conn *Connection) WriteRead(group uint32, offset uint32, readLength uint32
 		return
 	}
 	data = make([]byte, response.Length)
-	binary.Read(respBuff, binary.LittleEndian, data)
-	return data, nil
+	err = binary.Read(respBuff, binary.LittleEndian, data)
+	return data, err
 }

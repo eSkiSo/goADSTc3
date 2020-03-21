@@ -9,7 +9,7 @@ import (
 )
 
 // Write - ADS command id: 3
-func (conn *Connection) Write(group uint32, offset uint32, data []byte) {
+func (conn *Connection) Write(group uint32, offset uint32, data []byte) error {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
 	type writeCommandPacket struct {
@@ -29,6 +29,7 @@ func (conn *Connection) Write(group uint32, offset uint32, data []byte) {
 	if err != nil {
 		log.Error().
 			Msgf("binary.Write failed: %s", err)
+		return err
 	}
 
 	// Try to send the request
@@ -37,7 +38,7 @@ func (conn *Connection) Write(group uint32, offset uint32, data []byte) {
 		log.Error().
 			Err(err).
 			Msg("error during send request for write")
-		return
+		return err
 	}
 	respBuffer := bytes.NewBuffer(resp)
 	var respCode ReturnCode
@@ -48,8 +49,8 @@ func (conn *Connection) Write(group uint32, offset uint32, data []byte) {
 			Err(err).
 			Msg("error during write")
 		err = fmt.Errorf("Got ADS error number %v in Write", respCode)
-		return
+		return err
 	}
 
-	return
+	return nil
 }

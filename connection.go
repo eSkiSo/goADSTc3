@@ -30,10 +30,12 @@ type Connection struct {
 	symbolLock sync.Mutex
 
 	// List of active requests that waits a response, invokeid is key and value is a channel to the request rutine
-	activeRequests      map[CommandID]*requestResponse
-	systemResponse      chan []byte
-	activeNotifications map[uint32]chan symbolUpdate
-	invokeID            atomic.Uint32
+	activeRequests         map[CommandID]*requestResponse
+	activeRequestLock      sync.Mutex
+	systemResponse         chan []byte
+	activeNotifications    map[uint32]chan symbolUpdate
+	activeNotificationLock sync.Mutex
+	invokeID               atomic.Uint32
 }
 
 type requestResponse struct {
@@ -61,7 +63,12 @@ func NewConnection(ctx context.Context, ip string, port int, netid string, amsPo
 	return
 }
 
-func (conn *Connection) Connect(local bool) {
+func (conn *Connection) dial() (err error) {
+	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
+	return err
+}
+
+func (conn *Connection) Connect(local bool) error {
 	var err error
 
 	log.Debug().
@@ -70,12 +77,12 @@ func (conn *Connection) Connect(local bool) {
 		conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
 		conn.ip = "127.0.0.1"
 	}
-	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
+	err = conn.dial()
 	if err != nil {
 		log.Error().
 			Err(err).
 			Msg("Error connecting")
-		return
+		return err
 	}
 	log.Trace().
 		Msgf("Connected")
@@ -104,7 +111,7 @@ func (conn *Connection) Connect(local bool) {
 	symbolsResponse, err := conn.GetUploadSymbolInfoSymbols(res.SymbolLength)
 	symbols, err := ParseUploadSymbolInfoSymbols(symbolsResponse, datatypes)
 	conn.symbols = symbols
-	return
+	return nil
 }
 
 // Close closes connection and waits for completion
@@ -113,6 +120,9 @@ func (conn *Connection) Close() {
 		Msg("CLOSE is called")
 	log.Debug().
 		Msg("Sending shutdown to workers")
+	for handle := range conn.activeNotifications {
+		conn.DeleteDeviceNotification(handle)
+	}
 	for _, symbol := range conn.symbols {
 		if symbol.Handle != 0 {
 			log.Info().
@@ -124,11 +134,8 @@ func (conn *Connection) Close() {
 		}
 
 	}
-	for handle := range conn.activeNotifications {
-		conn.DeleteDeviceNotification(handle)
-	}
 	conn.shutdown()
-	log.Debug().
+	log.Info().
 		Msg("Waiting for workers to close")
 	conn.waitGroup.Wait()
 	log.Info().

@@ -43,7 +43,6 @@ func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data [
 	}
 
 	// Read	- ADS command id: 2
-
 	err = binary.Write(request, binary.LittleEndian, content)
 
 	log.Trace().

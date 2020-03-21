@@ -16,7 +16,7 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
 
-	ctx, cancel := context.WithTimeout(conn.ctx, time.Second)
+	ctx, cancel := context.WithCancel(conn.ctx)
 	defer cancel()
 	select {
 	case <-ctx.Done():
@@ -36,10 +36,9 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 		break
 	}
 
-	ctx, cancel = context.WithTimeout(ctx, time.Second)
+	ctx, cancel = context.WithCancel(ctx)
 	defer cancel()
 	select {
-
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("Request aborted, deadline exceeded %w", ctx.Err())
@@ -54,7 +53,7 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 		}
 		return nil, err
 	case response = <-conn.systemResponse:
-		return
+		return response, nil
 	}
 }
 
@@ -66,11 +65,13 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 			Msg("Failed to encode header, connection is nil pointer")
 		return
 	}
-	// First, request a new invoke id
+	conn.activeRequestLock.Lock()
 	responseMap := conn.activeRequests[command]
-	// Create a channel for the response
+	// First, request a new invoke id
 	id := responseMap.id.Inc()
+	// Create a channel for the response
 	responseMap.response[id] = make(chan []byte)
+	conn.activeRequestLock.Unlock()
 	log.Trace().
 		Interface("command", command).
 		Bytes("data", data).
@@ -85,7 +86,7 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(conn.ctx, time.Second)
+	ctx, cancel := context.WithCancel(conn.ctx)
 	defer cancel()
 	select {
 	case <-ctx.Done():
@@ -93,15 +94,14 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 			log.Error().
 				Msg("sendRequest aborted due to timeout")
 		} else {
-			log.Error().
+			log.Info().
 				Msg("sendRequest aborted due to shutdown")
 		}
-		break
+		return nil, ctx.Err()
 	case conn.sendChannel <- pack:
 		break
 	}
-
-	ctx, cancel = context.WithTimeout(conn.ctx, time.Second)
+	ctx, cancel = context.WithCancel(conn.ctx)
 	defer cancel()
 	select {
 	case <-ctx.Done():
@@ -109,7 +109,7 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 			log.Error().
 				Msg("sendRequest aborted due to timeout")
 		} else {
-			log.Error().
+			log.Info().
 				Msg("sendRequest aborted due to shutdown")
 		}
 		return nil, ctx.Err()
@@ -130,6 +130,8 @@ func listen(conn *Connection) <-chan []byte {
 			for { // using small tmo buffer for demonstrating
 				select {
 				case <-ctx.Done():
+					log.Info().
+						Msgf("exit listen")
 					return
 				default:
 					if buff.Len() > 6 {
@@ -142,9 +144,13 @@ func listen(conn *Connection) <-chan []byte {
 							Err(err).
 							Msg("error during tcp read")
 						if errors.Is(err, io.EOF) {
-							break readLoop
+							log.Error().
+								Err(err).
+								Msg("EOF Error")
+							//break readLoop
 						}
-						return
+
+						break
 					}
 				}
 			}
@@ -245,9 +251,10 @@ func receiveWorker(conn *Connection) {
 				fallthrough
 			default:
 				// Check if the response channel exists and is open
+				//conn.activeRequestLock.Lock()
 				if responseMap, ok := conn.activeRequests[header.Command]; ok {
 					if response, ok := responseMap.response[header.InvokeID]; ok {
-						ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+						ctx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
 						defer cancel()
 						// Try to send the response to the waiting request function
 						select {
@@ -264,10 +271,6 @@ func receiveWorker(conn *Connection) {
 								Msgf("Successfully deliverd answer")
 							break
 						default:
-							log.Info().
-								Uint32("id", header.InvokeID).
-								Interface("command", header.Command).
-								Msg("receive channel closed")
 							break
 						}
 					}
@@ -277,6 +280,7 @@ func receiveWorker(conn *Connection) {
 						Uint32("invokeId", header.InvokeID).
 						Msg("Got broadcast, invoke: ")
 				}
+				//conn.activeRequestLock.Unlock()
 			}
 		}
 	}

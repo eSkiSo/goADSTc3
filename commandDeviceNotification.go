@@ -46,33 +46,31 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 
 		for j := uint32(0); j < header.Samples; j++ {
 			binary.Read(data, binary.LittleEndian, &sample)
-
 			content = make([]byte, sample.Size)
 			data.Read(content)
-
+			conn.activeNotificationLock.Lock()
 			notification, ok := conn.activeNotifications[sample.Handle]
 			update := symbolUpdate{
 				data:      content,
 				timestamp: time.Now(),
 			}
 			if ok {
-				go func() {
-					ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-					defer cancel()
-					// Try to send the response to the waiting request function
-					select {
-					case <-ctx.Done():
-						return
-					case notification <- update:
-						log.Debug().
-							Msgf("Successfully delivered notification for handle %d", sample.Handle)
-						break
-					}
-				}()
+				ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+				defer cancel()
+				// Try to send the response to the waiting request function
+				select {
+				case <-ctx.Done():
+					break
+				case notification <- update:
+					log.Debug().
+						Msgf("Successfully delivered notification for handle %d", sample.Handle)
+					break
+				}
+
 			} else {
 				err = fmt.Errorf("error finding callback for notification")
-				return err
 			}
+			conn.activeNotificationLock.Unlock()
 		}
 	}
 	return err
