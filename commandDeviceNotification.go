@@ -10,6 +10,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const windowsTick int64 = 10000000
+const secToUnixEpoch int64 = 11644473600
+
 // DeviceNotification - ADS command id: 8
 func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error {
 	conn.waitGroup.Add(1)
@@ -47,12 +50,13 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 		for j := uint32(0); j < header.Samples; j++ {
 			binary.Read(data, binary.LittleEndian, &sample)
 			content = make([]byte, sample.Size)
+
 			data.Read(content)
 			conn.activeNotificationLock.Lock()
 			notification, ok := conn.activeNotifications[sample.Handle]
 			update := symbolUpdate{
 				data:      content,
-				timestamp: time.Now(),
+				timestamp: notificationTime,
 			}
 			if ok {
 				ctx, cancel := context.WithTimeout(ctx, 1*time.Second)

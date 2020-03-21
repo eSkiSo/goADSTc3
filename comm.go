@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -19,21 +20,11 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 	ctx, cancel := context.WithCancel(conn.ctx)
 	defer cancel()
 	select {
-	case <-ctx.Done():
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("Request aborted, deadline exceeded %w", ctx.Err())
-			log.Error().
-				Err(err).
-				Msg("sendRequest aborted due to timeout")
-		} else {
-			err = fmt.Errorf("Request aborted, shutdown initiated %w", ctx.Err())
-			log.Error().
-				Err(err).
-				Msg("sendRequest aborted due to shutdown")
-		}
+	case <-conn.ctx.Done():
 		return response, err
 	case conn.sendChannel <- data:
-		break
+	default:
+		return
 	}
 
 	ctx, cancel = context.WithCancel(ctx)
@@ -55,6 +46,7 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 	case response = <-conn.systemResponse:
 		return response, nil
 	}
+	return
 }
 
 func (conn *Connection) sendRequest(command CommandID, data []byte) (response []byte, err error) {
@@ -115,14 +107,14 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 		return nil, ctx.Err()
 	case response = <-responseMap.response[id]:
 		return response, nil
+	case <-time.After(250 * time.Millisecond):
 	}
+	return
 }
 
 func listen(conn *Connection) <-chan []byte {
 	c := make(chan []byte)
 	go func() {
-		ctx, cancel := context.WithCancel(conn.ctx)
-		defer cancel()
 		buff := &bytes.Buffer{}
 		tmp := make([]byte, 256)
 		for {
@@ -143,6 +135,14 @@ func listen(conn *Connection) <-chan []byte {
 						log.Error().
 							Err(err).
 							Msg("error during tcp read")
+						var timeoutError net.Error
+						if errors.As(err, &timeoutError) {
+							if timeoutError.Timeout() {
+								log.Error().
+									Msg("timeout error")
+								conn.ReConnect()
+							}
+						}
 						if errors.Is(err, io.EOF) {
 							log.Error().
 								Err(err).
@@ -165,7 +165,7 @@ func listen(conn *Connection) <-chan []byte {
 		bodyLoop:
 			for { // using small tmo buffer for demonstrating
 				select {
-				case <-ctx.Done():
+				case <-conn.ctx.Done():
 					return
 				default:
 					if buff.Len() >= int(tcpHeader.Length) {
@@ -192,16 +192,15 @@ func listen(conn *Connection) <-chan []byte {
 					Uint32("header length", tcpHeader.Length).
 					Msg("TCPHeader")
 			}
-
+			var receiveChan chan []byte
 			if tcpHeader.System > 0 {
-				go func(sendData []byte) {
-					conn.systemResponse <- sendData
-				}(data)
-
+				receiveChan = conn.systemResponse
 			} else {
-				go func(sendData []byte) {
-					c <- sendData
-				}(data)
+				receiveChan = c
+			}
+			select {
+			case <-time.After(250 * time.Millisecond):
+			case receiveChan <- data:
 			}
 
 		}
@@ -209,15 +208,13 @@ func listen(conn *Connection) <-chan []byte {
 	return c
 }
 
-func receiveWorker(conn *Connection) {
+func (conn *Connection) receiveWorker() {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
 	read := listen(conn)
-	ctx, cancel := context.WithCancel(conn.ctx)
-	defer cancel()
 	for {
 		select {
-		case <-ctx.Done():
+		case <-conn.ctx.Done():
 			log.Debug().
 				Msg("Exit receiveWorker")
 			return
@@ -258,7 +255,7 @@ func receiveWorker(conn *Connection) {
 						defer cancel()
 						// Try to send the response to the waiting request function
 						select {
-						case <-ctx.Done():
+						case <-conn.ctx.Done():
 							log.Info().
 								Uint32("id", header.InvokeID).
 								Interface("command", header.Command).
@@ -287,14 +284,12 @@ func receiveWorker(conn *Connection) {
 
 }
 
-func transmitWorker(conn *Connection) {
+func (conn *Connection) transmitWorker() {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
-	ctx, cancel := context.WithCancel(conn.ctx)
-	defer cancel()
 	for {
 		select {
-		case <-ctx.Done():
+		case <-conn.ctx.Done():
 			log.Debug().
 				Msg("Exit transmitWorker")
 			return

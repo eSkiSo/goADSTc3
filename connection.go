@@ -23,11 +23,12 @@ type Connection struct {
 
 	symbols map[string]*Symbol
 
-	datatypes  map[string]SymbolUploadDataType
-	ctx        context.Context
-	shutdown   context.CancelFunc
-	waitGroup  sync.WaitGroup
-	symbolLock sync.Mutex
+	datatypes   map[string]SymbolUploadDataType
+	ctx         context.Context
+	shutdown    context.CancelFunc
+	waitGroup   sync.WaitGroup
+	symbolLock  sync.Mutex
+	requestLock sync.Mutex
 
 	// List of active requests that waits a response, invokeid is key and value is a channel to the request rutine
 	activeRequests         map[CommandID]*requestResponse
@@ -87,8 +88,8 @@ func (conn *Connection) Connect(local bool) error {
 	log.Trace().
 		Msgf("Connected")
 
-	go receiveWorker(conn)
-	go transmitWorker(conn)
+	go conn.receiveWorker()
+	go conn.transmitWorker()
 	if local {
 		resp, err := conn.send([]byte{0, 16, 2, 0, 0, 0, 0, 0})
 		buf := bytes.NewBuffer(resp)
@@ -112,6 +113,22 @@ func (conn *Connection) Connect(local bool) error {
 	symbols, err := ParseUploadSymbolInfoSymbols(symbolsResponse, datatypes)
 	conn.symbols = symbols
 	return nil
+}
+
+func (conn *Connection) ReConnect() {
+	var err error
+
+	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Error connecting")
+		return
+	}
+	log.Trace().
+		Msgf("Connected")
+
+	return
 }
 
 // Close closes connection and waits for completion
