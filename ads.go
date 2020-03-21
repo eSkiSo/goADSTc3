@@ -204,6 +204,8 @@ func (conn *Connection) notificationHandler(symbolname string, updateReceiver ch
 					Value:     value,
 					TimeStamp: receivedUpdate.timestamp,
 				}
+				receiveCTX, cancel := context.WithCancel(conn.ctx)
+				defer cancel()
 				select {
 				case <-receiveCTX.Done():
 					break
