@@ -173,7 +173,7 @@ type Update struct {
 /// Sample notification handler
 func (conn *Connection) notificationHandler(symbolname string, updateReceiver chan Update) chan symbolUpdate {
 	update := make(chan symbolUpdate)
-	go func() {
+	go func(update chan symbolUpdate) {
 		conn.waitGroup.Add(1)
 		defer conn.waitGroup.Done()
 		for {
@@ -217,6 +217,6 @@ func (conn *Connection) notificationHandler(symbolname string, updateReceiver ch
 
 			}
 		}
-	}()
+	}(update)
 	return update
 }

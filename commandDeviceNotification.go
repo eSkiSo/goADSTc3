@@ -61,17 +61,19 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 				timestamp: notificationTime,
 			}
 			if ok {
-				ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
-				defer cancel()
-				// Try to send the response to the waiting request function
-				select {
-				case <-ctx.Done():
-					break
-				case notification <- update:
-					log.Debug().
-						Msgf("Successfully delivered notification for handle %d", sample.Handle)
-					break
-				}
+				go func(update symbolUpdate) {
+					ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+					defer cancel()
+					// Try to send the response to the waiting request function
+					select {
+					case <-ctx.Done():
+						break
+					case notification <- update:
+						log.Debug().
+							Msgf("Successfully delivered notification for handle %d", sample.Handle)
+						break
+					}
+				}(update)
 
 			} else {
 				err = fmt.Errorf("error finding callback for notification")
