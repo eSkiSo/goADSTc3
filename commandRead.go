@@ -52,11 +52,15 @@ func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data [
 	if err != nil {
 		log.Error().
 			Msgf("binary.Write failed: %s", err)
+		return nil, err
 	}
 
 	// Try to send the request
 	resp, err := conn.sendRequest(CommandIDRead, request.Bytes())
 	if err != nil {
+		log.Error().
+			Err(err).
+			Msgf("send request failed: %s", err)
 		return
 	}
 
@@ -67,12 +71,15 @@ func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data [
 	}
 	respBuff := bytes.NewBuffer(resp)
 	response := &readResponse{}
-	binary.Read(respBuff, binary.LittleEndian, response)
+	err = binary.Read(respBuff, binary.LittleEndian, response)
+	if err != nil {
+		return
+	}
 	if response.Error > 0 {
 		err = fmt.Errorf("Got ADS error number %v in Read", response.Error)
 		return
 	}
 	data = make([]byte, response.Length)
-	binary.Read(respBuff, binary.LittleEndian, data)
+	err = binary.Read(respBuff, binary.LittleEndian, data)
 	return data, nil
 }

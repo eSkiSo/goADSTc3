@@ -78,7 +78,8 @@ func (conn *Connection) Connect(local bool) error {
 		conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
 		conn.ip = "127.0.0.1"
 	}
-	err = conn.dial()
+	// err = conn.dial()
+	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -107,10 +108,30 @@ func (conn *Connection) Connect(local bool) error {
 	}
 	res, err := conn.GetSymbolUploadInfo()
 	datatypesResponse, err := conn.GetUploadSymbolInfoDataTypes(res.DataTypeLength)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msgf("ERROR %v", err)
+	}
 	datatypes, err := ParseUploadSymbolInfoDataTypes(datatypesResponse)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msgf("ERROR %v", err)
+	}
 	conn.datatypes = datatypes
 	symbolsResponse, err := conn.GetUploadSymbolInfoSymbols(res.SymbolLength)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msgf("ERROR %v", err)
+	}
 	symbols, err := ParseUploadSymbolInfoSymbols(symbolsResponse, datatypes)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msgf("ERROR %v", err)
+	}
 	conn.symbols = symbols
 	return nil
 }

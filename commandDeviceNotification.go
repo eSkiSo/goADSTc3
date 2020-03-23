@@ -48,11 +48,17 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 		binary.Read(data, binary.LittleEndian, &header)
 
 		for j := uint32(0); j < header.Samples; j++ {
-			binary.Read(data, binary.LittleEndian, &sample)
+			err := binary.Read(data, binary.LittleEndian, &sample)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("Error during notification read")
+				break
+			}
 			content = make([]byte, sample.Size)
 
 			data.Read(content)
-			conn.activeNotificationLock.Lock()
+			//conn.activeNotificationLock.Lock()
 			notification, ok := conn.activeNotifications[sample.Handle]
 			timeStamp := int64(header.Timestamp)/windowsTick - secToUnixEpoch
 			notificationTime := time.Unix(timeStamp, int64(header.Timestamp)%(windowsTick)*100)
@@ -62,7 +68,7 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 			}
 			if ok {
 				go func(update symbolUpdate) {
-					ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+					ctx, cancel := context.WithCancel(ctx)
 					defer cancel()
 					// Try to send the response to the waiting request function
 					select {
@@ -78,7 +84,7 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 			} else {
 				err = fmt.Errorf("error finding callback for notification")
 			}
-			conn.activeNotificationLock.Unlock()
+			// conn.activeNotificationLock.Unlock()
 		}
 	}
 	return err

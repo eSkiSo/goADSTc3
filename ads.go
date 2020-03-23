@@ -211,8 +211,6 @@ func (conn *Connection) notificationHandler(symbolname string, updateReceiver ch
 					break
 				case updateReceiver <- update:
 					break
-				default:
-					break
 				}
 
 			}
