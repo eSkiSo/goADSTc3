@@ -68,16 +68,31 @@ func (conn *Connection) dial() (err error) {
 	return err
 }
 
+func (conn *Connection) reconnect() {
+	var err error
+
+	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Error connecting")
+		return
+	}
+	log.Trace().
+		Msgf("Connected")
+
+	return
+}
+
 func (conn *Connection) Connect(local bool) error {
 	var err error
 
 	log.Debug().
 		Msgf("Dailing ip: %s NetID: %d", conn.ip, conn.port)
 	if local {
-		// conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
-		// conn.ip = "127.0.0.1"
+		conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
+		conn.ip = "127.0.0.1"
 	}
-	// err = conn.dial()
 	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
 	if err != nil {
 		log.Error().
@@ -88,13 +103,12 @@ func (conn *Connection) Connect(local bool) error {
 	log.Trace().
 		Msgf("Connected")
 	go conn.listen()
-	// go conn.receiveWorker()
 	go conn.transmitWorker()
 	if local {
 		resp, err := conn.send([]byte{0, 16, 2, 0, 0, 0, 0, 0})
 		buf := bytes.NewBuffer(resp)
 		result := AmsAddress{}
-		log.Info().
+		log.Trace().
 			Bytes("stuff", buf.Bytes()).Msg("got stuff")
 		err = binary.Read(buf, binary.LittleEndian, &result)
 		log.Info().
@@ -135,30 +149,17 @@ func (conn *Connection) Connect(local bool) error {
 	return nil
 }
 
-func (conn *Connection) ReConnect() {
-	var err error
-
-	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
-	if err != nil {
-		log.Error().
-			Err(err).
-			Msg("Error connecting")
-		return
-	}
-	log.Trace().
-		Msgf("Connected")
-
-	return
-}
-
 // Close closes connection and waits for completion
 func (conn *Connection) Close() {
-	log.Trace().
+	log.Info().
 		Msg("CLOSE is called")
-	log.Debug().
+	log.Info().
 		Msg("Sending shutdown to workers")
 	for handle := range conn.activeNotifications {
 		conn.DeleteDeviceNotification(handle)
+		log.Info().
+			Uint32("handle", handle).
+			Msg("Removed Notification handle")
 	}
 	for _, symbol := range conn.symbols {
 		if symbol.Handle != 0 {
