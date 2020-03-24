@@ -58,33 +58,34 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 			content = make([]byte, sample.Size)
 
 			data.Read(content)
-			//conn.activeNotificationLock.Lock()
+			conn.activeNotificationLock.Lock()
 			notification, ok := conn.activeNotifications[sample.Handle]
+			if !ok {
+				log.Error().
+					Msg("Can't find notification handle")
+
+				conn.DeleteDeviceNotification(sample.Handle)
+				conn.activeNotificationLock.Unlock()
+				continue
+			}
 			timeStamp := int64(header.Timestamp)/windowsTick - secToUnixEpoch
 			notificationTime := time.Unix(timeStamp, int64(header.Timestamp)%(windowsTick)*100)
 			update := symbolUpdate{
 				data:      content,
 				timestamp: notificationTime,
 			}
-			if ok {
-				go func(update symbolUpdate) {
-					ctx, cancel := context.WithCancel(ctx)
-					defer cancel()
-					// Try to send the response to the waiting request function
-					select {
-					case <-ctx.Done():
-						break
-					case notification <- update:
-						log.Debug().
-							Msgf("Successfully delivered notification for handle %d", sample.Handle)
-						break
-					}
-				}(update)
-
-			} else {
-				err = fmt.Errorf("error finding callback for notification")
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			// Try to send the response to the waiting request function
+			select {
+			case <-ctx.Done():
+				break
+			case notification <- update:
+				log.Debug().
+					Msgf("Successfully delivered notification for handle %d", sample.Handle)
+				break
 			}
-			// conn.activeNotificationLock.Unlock()
+			conn.activeNotificationLock.Unlock()
 		}
 	}
 	return err

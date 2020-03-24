@@ -36,7 +36,6 @@ type Connection struct {
 	systemResponse         chan []byte
 	activeNotifications    map[uint32]chan symbolUpdate
 	activeNotificationLock sync.Mutex
-	invokeID               atomic.Uint32
 }
 
 type requestResponse struct {
@@ -75,8 +74,8 @@ func (conn *Connection) Connect(local bool) error {
 	log.Debug().
 		Msgf("Dailing ip: %s NetID: %d", conn.ip, conn.port)
 	if local {
-		conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
-		conn.ip = "127.0.0.1"
+		// conn.target.NetID = [6]byte{127, 0, 0, 1, 1, 1}
+		// conn.ip = "127.0.0.1"
 	}
 	// err = conn.dial()
 	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
@@ -88,8 +87,8 @@ func (conn *Connection) Connect(local bool) error {
 	}
 	log.Trace().
 		Msgf("Connected")
-
-	go conn.receiveWorker()
+	go conn.listen()
+	// go conn.receiveWorker()
 	go conn.transmitWorker()
 	if local {
 		resp, err := conn.send([]byte{0, 16, 2, 0, 0, 0, 0, 0})
