@@ -21,10 +21,15 @@ func (conn *Connection) Write(group uint32, offset uint32, data []byte) error {
 	writeRequest := writeCommandPacket{
 		group,
 		offset,
-		uint32(len(data)),
+		uint32(binary.Size(data)),
 	}
 
 	err := binary.Write(request, binary.LittleEndian, writeRequest)
+	if err != nil {
+		log.Error().
+			Msgf("binary.Write failed: %s", err)
+		return err
+	}
 	binary.Write(request, binary.LittleEndian, data)
 	if err != nil {
 		log.Error().

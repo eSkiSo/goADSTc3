@@ -54,11 +54,13 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 			Msg("Failed to encode header, connection is nil pointer")
 		return
 	}
+	conn.activeRequestLock.Lock()
 	responseMap := conn.activeRequests[command]
 	// First, request a new invoke id
 	id := responseMap.id.Inc()
 	// Create a channel for the response
 	responseMap.response[id] = make(chan []byte)
+	conn.activeRequestLock.Unlock()
 	log.Trace().
 		Interface("command", command).
 		Bytes("data", data).
@@ -244,7 +246,6 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 		conn.activeRequestLock.Lock()
 		if responseMap, ok := conn.activeRequests[header.Command]; ok {
 			if response, ok := responseMap.response[header.InvokeID]; ok {
-
 				ctx, cancel := context.WithCancel(ctx)
 				defer cancel()
 				// Try to send the response to the waiting request function
@@ -402,10 +403,10 @@ func (conn *Connection) receiveWorker() {
 func (conn *Connection) transmitWorker() {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
+	writer := bufio.NewWriter(conn.connection)
 	for {
 		ctx, cancel := context.WithCancel(conn.ctx)
 		defer cancel()
-		writer := bufio.NewWriter(conn.connection)
 		select {
 		case <-ctx.Done():
 			log.Debug().
@@ -415,7 +416,6 @@ func (conn *Connection) transmitWorker() {
 			log.Trace().
 				Msgf("Sending %d bytes", len(data))
 			_, err := writer.Write(data)
-
 			// _, err := conn.connection.Write(data)
 			if err != nil {
 				log.Error().
