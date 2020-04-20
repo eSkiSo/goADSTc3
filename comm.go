@@ -110,14 +110,9 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 func (conn *Connection) listen() <-chan []byte {
 	c := make(chan []byte)
 	go func() {
-		// buff := &bytes.Buffer{}
-		// tmp := make([]byte, 1024)
 		reader := bufio.NewReader(conn.connection)
-		buff := bytes.Buffer{}
 		for {
 			data := make([]byte, 6)
-			//readLoop:
-			// for {
 			ctx, cancel := context.WithCancel(conn.ctx)
 			defer cancel()
 			select {
@@ -132,6 +127,7 @@ func (conn *Connection) listen() <-chan []byte {
 				}
 				break
 			}
+			buff := bytes.Buffer{}
 			buff.Write(data)
 			tcpHeader := amsTCPHeader{}
 			err := binary.Read(&buff, binary.LittleEndian, &tcpHeader)
@@ -142,8 +138,6 @@ func (conn *Connection) listen() <-chan []byte {
 				continue
 			}
 			data = make([]byte, tcpHeader.Length)
-			//bodyLoop:
-			//for { // using small tmo buffer for demonstrating
 			ctx, cancel = context.WithCancel(conn.ctx)
 			defer cancel()
 			select {
@@ -152,42 +146,11 @@ func (conn *Connection) listen() <-chan []byte {
 			default:
 				io.ReadFull(reader, data)
 			}
-			buff.Reset()
-			buff.Write(data)
-			data = make([]byte, tcpHeader.Length)
-			err = binary.Read(&buff, binary.LittleEndian, &data)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Msg("read error")
-				continue
-			} else {
-				log.Debug().
-					Int("buffer length", buff.Len()).
-					Uint32("header length", tcpHeader.Length).
-					Msg("TCPHeader")
-			}
-			// var receiveChan chan []byte
-			// if tcpHeader.System > 0 {
-			// 	receiveChan = conn.systemResponse
-			// } else {
-			// 	receiveChan = c
-			// }
 			if tcpHeader.System > 0 {
 				conn.systemResponse <- data
-				// receiveChan = conn.systemResponse
 			} else {
 				go conn.handleReceive(ctx, data)
 			}
-			// go conn.handleReceive(ctx, data)
-			// ctx, cancel = context.WithCancel(conn.ctx)
-			// defer cancel()
-			// select {
-			// case <-ctx.Done():
-			// 	return
-			// case receiveChan <- data:
-			// 	break
-			// }
 		}
 	}()
 	return c
