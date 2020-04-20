@@ -80,6 +80,10 @@ func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 			Msg("error getting symbol")
 		return "", err
 	}
+	now := time.Now()
+	if now.Sub(symbol.LastUpdateTime) < symbol.MinUpdateInterval && symbol.Value != "" {
+		return symbol.Value, nil
+	}
 	data, err := conn.Read(uint32(GroupSymbolValueByHandle), symbol.Handle, symbol.Length)
 	if err != nil {
 		log.Error().
@@ -96,6 +100,7 @@ func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 			Msg("error during parse symbol")
 		return "", err
 	}
+	symbol.LastUpdateTime = now
 	symbol.Value = value
 	return value, nil
 }
