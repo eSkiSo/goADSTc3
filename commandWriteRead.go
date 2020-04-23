@@ -58,7 +58,7 @@ func (conn *Connection) WriteRead(group uint32, offset uint32, readLength uint32
 		err = fmt.Errorf("Got ADS error number %v in Read", response.Error)
 		return
 	}
-	data = make([]byte, response.Length)
-	err = binary.Read(respBuff, binary.LittleEndian, data)
-	return data, err
+	// data = make([]byte, response.Length)
+	// err = binary.Read(respBuff, binary.LittleEndian, data)
+	return respBuff.Bytes(), err
 }

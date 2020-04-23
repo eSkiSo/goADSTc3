@@ -171,9 +171,11 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 	log.Trace().
 		Interface("header", header).
 		Msg("header info")
-	adsData := make([]byte, header.Length)
-	err = binary.Read(buff, binary.LittleEndian, &adsData)
-	if err != nil {
+
+	// adsData := make([]byte, header.Length)
+	// err = binary.Read(buff, binary.LittleEndian, &adsData)
+	adsData := data[32:]
+	if len(adsData) != int(header.Length) {
 		log.Error().
 			Err(err).
 			Msg("Error parsing body")
@@ -219,7 +221,7 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 						Interface("command", header.Command).
 						Msg("receive channel timed out")
 					conn.activeRequestLock.Unlock()
-					return
+					break
 				case response <- adsData:
 					log.Trace().
 						Uint32("id", header.InvokeID).
@@ -264,89 +266,81 @@ func (conn *Connection) receiveWorker() {
 				Msg("Exit receiveWorker")
 			return
 		case data := <-read:
-			go func() {
-				log.Trace().
-					Msg("in read")
-				buff := bytes.NewBuffer(data)
-				header := amsHeader{}
-				err := binary.Read(buff, binary.LittleEndian, &header)
+			log.Trace().
+				Msg("in read")
+			buff := bytes.NewBuffer(data)
+			header := amsHeader{}
+			err := binary.Read(buff, binary.LittleEndian, &header)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("Error parsing header")
+				conn.requestLock.Unlock()
+				break
+			}
+			log.Trace().
+				Interface("header", header).
+				Msg("header info")
+			adsData := make([]byte, header.Length)
+			err = binary.Read(buff, binary.LittleEndian, &adsData)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("Error parsing body")
+				break
+			}
+			switch header.Command {
+			case CommandIDDeviceNotification:
+				err := conn.DeviceNotification(ctx, adsData)
 				if err != nil {
 					log.Error().
 						Err(err).
-						Msg("Error parsing header")
-					return
+						Msg("error")
 				}
-				log.Trace().
-					Interface("header", header).
-					Msg("header info")
-				adsData := make([]byte, header.Length)
-				err = binary.Read(buff, binary.LittleEndian, &adsData)
+				break
+			case CommandIDReadState:
+				type readStateResponse struct {
+					Error ReturnCode
+					states
+				}
+				stateResponse := &readStateResponse{}
+				buff := bytes.NewBuffer(adsData)
+				err := binary.Read(buff, binary.LittleEndian, stateResponse)
 				if err != nil {
-					log.Error().
-						Err(err).
-						Msg("Error parsing body")
-					return
+					break
 				}
-				switch header.Command {
-				case CommandIDDeviceNotification:
-					err := conn.DeviceNotification(ctx, adsData)
-					if err != nil {
-						log.Error().
-							Err(err).
-							Msg("error")
-					}
-					break
-				case CommandIDReadState:
-					type readStateResponse struct {
-						Error ReturnCode
-						states
-					}
-					stateResponse := &readStateResponse{}
-					buff := bytes.NewBuffer(adsData)
-					err := binary.Read(buff, binary.LittleEndian, stateResponse)
-					if err != nil {
-						return
-					}
-					log.Info().
-						Interface("AdsState", stateResponse.AdsState).
-						Interface("DeviceState", stateResponse.DeviceState).
-						Msg("response.ADSState")
-					break
-				default:
-					// Check if the response channel exists and is open
-					// conn.activeRequestLock.Lock()
-					if responseMap, ok := conn.activeRequests[header.Command]; ok {
-						if response, ok := responseMap.response[header.InvokeID]; ok {
-
-							ctx, cancel := context.WithCancel(ctx)
-							defer cancel()
-							// Try to send the response to the waiting request function
-							select {
-							case <-ctx.Done():
-								log.Info().
-									Uint32("id", header.InvokeID).
-									Interface("command", header.Command).
-									Msg("receive channel timed out")
-								return
-							case response <- adsData:
-								log.Trace().
-									Uint32("id", header.InvokeID).
-									Interface("command", header.Command).
-									Msgf("Successfully deliverd answer")
-								break
-							default:
-								log.Trace().
-									Uint32("id", header.InvokeID).
-									Interface("command", header.Command).
-									Msgf("unable to send to getter")
-								break
-							}
-
-						} else {
-							log.Error().
-								Bytes("data", buff.Bytes()).
-								Uint32("invokeId", header.InvokeID).
-								Msg("Got broadcast, invoke: ")
+				log.Info().
+					Interface("AdsState", stateResponse.AdsState).
+					Interface("DeviceState", stateResponse.DeviceState).
+					Msg("response.ADSState")
+				break
+			default:
+				// Check if the response channel exists and is open
+				// conn.activeRequestLock.Lock()
+				if responseMap, ok := conn.activeRequests[header.Command]; ok {
+					if response, ok := responseMap.response[header.InvokeID]; ok {
+						ctx, cancel := context.WithCancel(ctx)
+						defer cancel()
+						// Try to send the response to the waiting request function
+						select {
+						case <-ctx.Done():
+							log.Info().
+								Uint32("id", header.InvokeID).
+								Interface("command", header.Command).
+								Msg("receive channel timed out")
+							break
+						case response <- adsData:
+							log.Trace().
+								Uint32("id", header.InvokeID).
+								Interface("command", header.Command).
+								Msgf("Successfully deliverd answer")
+							break
+						default:
+							log.Trace().
+								Uint32("id", header.InvokeID).
+								Interface("command", header.Command).
+								Msgf("unable to send to getter")
+							break
 						}
 
 					} else {
@@ -355,12 +349,15 @@ func (conn *Connection) receiveWorker() {
 							Uint32("invokeId", header.InvokeID).
 							Msg("Got broadcast, invoke: ")
 					}
+				} else {
+					log.Error().
+						Bytes("data", buff.Bytes()).
+						Uint32("invokeId", header.InvokeID).
+						Msg("Got broadcast, invoke: ")
 				}
-			}()
+			}
 		}
-
 	}
-
 }
 
 func (conn *Connection) transmitWorker() {

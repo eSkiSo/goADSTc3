@@ -79,7 +79,7 @@ func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data [
 		err = fmt.Errorf("Got ADS error number %v in Read", response.Error)
 		return
 	}
-	data = make([]byte, response.Length)
-	err = binary.Read(respBuff, binary.LittleEndian, data)
-	return data, nil
+	// data = make([]byte, response.Length)
+	// err = binary.Read(respBuff, binary.LittleEndian, data)
+	return respBuff.Bytes(), nil
 }
