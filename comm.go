@@ -111,8 +111,10 @@ func (conn *Connection) listen() <-chan []byte {
 	c := make(chan []byte)
 	go func() {
 		reader := bufio.NewReader(conn.connection)
+		buff := bytes.Buffer{}
 		for {
-			data := make([]byte, 6)
+			tcpHeader := amsTCPHeader{}
+			data := make([]byte, binary.Size(tcpHeader))
 			ctx, cancel := context.WithCancel(conn.ctx)
 			defer cancel()
 			select {
@@ -127,9 +129,7 @@ func (conn *Connection) listen() <-chan []byte {
 				}
 				break
 			}
-			buff := bytes.Buffer{}
 			buff.Write(data)
-			tcpHeader := amsTCPHeader{}
 			err := binary.Read(&buff, binary.LittleEndian, &tcpHeader)
 			if err != nil {
 				log.Error().
