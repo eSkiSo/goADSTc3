@@ -228,12 +228,12 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 						Interface("command", header.Command).
 						Msgf("Successfully deliverd answer")
 					break
-				default:
-					log.Trace().
-						Uint32("id", header.InvokeID).
-						Interface("command", header.Command).
-						Msgf("unable to send to getter")
-					break
+					// default:
+					// 	log.Trace().
+					// 		Uint32("id", header.InvokeID).
+					// 		Interface("command", header.Command).
+					// 		Msgf("unable to send to getter")
+					// 	break
 				}
 
 			} else {
