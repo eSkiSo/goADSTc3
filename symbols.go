@@ -242,7 +242,7 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header Symbo
 	totalSize := data.Len()
 
 	if totalSize < 48 {
-		err = fmt.Errorf(parent, " - Wrong size <48 byte")
+		err = fmt.Errorf(parent, " - Wrong size < 48 byte")
 		fmt.Printf(hex.Dump(data.Bytes()))
 	}
 

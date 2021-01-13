@@ -170,7 +170,6 @@ func (conn *Connection) Close() {
 			binary.LittleEndian.PutUint32(handleBytes, symbol.Handle)
 			conn.Write(uint32(GroupSymbolReleaseHandle), 0, handleBytes)
 		}
-
 	}
 	conn.shutdown()
 	log.Info().

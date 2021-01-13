@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+
+	"github.com/rs/zerolog/log"
 )
 
 // DeleteDeviceNotification does stuff
@@ -21,6 +23,10 @@ func (conn *Connection) DeleteDeviceNotification(handle uint32) {
 	// Try to send the request
 	resp, err := conn.sendRequest(CommandIDDeleteDeviceNotification, request.Bytes())
 	if err != nil {
+		log.Info().
+			Int("handle", int(handle)).
+			Err(err).
+			Msg("error deleting handle")
 		return
 	}
 
@@ -28,10 +34,17 @@ func (conn *Connection) DeleteDeviceNotification(handle uint32) {
 	respBuffer := bytes.NewBuffer(resp)
 	var adsError ReturnCode
 	binary.Read(respBuffer, binary.LittleEndian, &adsError)
-	delete(conn.activeNotifications, handle)
 	if adsError > 0 {
+		log.Info().
+			Int("handle", int(handle)).
+			Int("error", int(adsError)).
+			Msg("error deleting handle")
 		err = fmt.Errorf("Got ADS error number %d in DeleteDeviceNotification", adsError)
 		return
 	}
+	delete(conn.activeNotifications, handle)
+	log.Info().
+		Int("handle", int(handle)).
+		Msg("deleting handle")
 	return
 }

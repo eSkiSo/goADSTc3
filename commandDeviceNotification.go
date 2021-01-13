@@ -62,8 +62,8 @@ func (conn *Connection) DeviceNotification(ctx context.Context, in []byte) error
 			notification, ok := conn.activeNotifications[sample.Handle]
 			if !ok {
 				log.Error().
+					Int("handle", int(sample.Handle)).
 					Msg("Can't find notification handle")
-
 				conn.DeleteDeviceNotification(sample.Handle)
 				conn.activeNotificationLock.Unlock()
 				continue

@@ -110,6 +110,8 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 func (conn *Connection) listen() <-chan []byte {
 	c := make(chan []byte)
 	go func() {
+		defer close(c)
+		defer conn.ctx.Done()
 		reader := bufio.NewReader(conn.connection)
 		buff := bytes.Buffer{}
 		for {
@@ -125,7 +127,10 @@ func (conn *Connection) listen() <-chan []byte {
 			default:
 				_, err := io.ReadFull(reader, data)
 				if err != nil {
-					continue
+					log.Info().
+						Err(err).
+						Msg("listen read error")
+					return
 				}
 				break
 			}
@@ -142,7 +147,7 @@ func (conn *Connection) listen() <-chan []byte {
 			defer cancel()
 			select {
 			case <-ctx.Done():
-				return
+				continue
 			default:
 				io.ReadFull(reader, data)
 			}

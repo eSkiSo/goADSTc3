@@ -162,6 +162,7 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 	if err != nil {
 		return err
 	}
+	log.Info().Int("handle", int(handle)).Msg("notification created")
 	update := conn.notificationHandler(symbolName, updateReceiver)
 	conn.activeNotificationLock.Lock()
 	defer conn.activeNotificationLock.Unlock()
