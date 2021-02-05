@@ -378,7 +378,7 @@ func (symbol *Symbol) GetJSON(onlyChanged bool) string {
 
 var openBracketRegex = regexp.MustCompile(`\[`)
 var closeBracketRegex = regexp.MustCompile(`\]`)
-var stringsList = map[string]struct{}{"STRING": struct{}{}, "TIME": struct{}{}, "TOD": struct{}{}, "DATE": struct{}{}, "DT": struct{}{}}
+var stringsList = map[string]struct{}{"STRING": {}, "TIME": {}, "TOD": {}, "DATE": {}, "DT": {}}
 
 // parseSymbol returns JSON interface for symbol
 func (symbol *Symbol) parseSymbol(onlyChanged bool) (rData interface{}) {
