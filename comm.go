@@ -195,22 +195,6 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 				Msg("error")
 		}
 		break
-	case CommandIDReadState:
-		type readStateResponse struct {
-			Error ReturnCode
-			states
-		}
-		stateResponse := &readStateResponse{}
-		buff := bytes.NewBuffer(adsData)
-		err := binary.Read(buff, binary.LittleEndian, stateResponse)
-		if err != nil {
-			return
-		}
-		log.Info().
-			Interface("AdsState", stateResponse.AdsState).
-			Interface("DeviceState", stateResponse.DeviceState).
-			Msg("response.ADSState")
-		break
 	default:
 		// Check if the response channel exists and is open
 		conn.activeRequestLock.Lock()
