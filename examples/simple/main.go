@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"runtime/pprof"
@@ -15,7 +16,7 @@ import (
 	ads "gitlab.com/xilix-systems-llc/go-native-ads/v4"
 )
 
-var WaitGroup sync.WaitGroup
+var waitGroup sync.WaitGroup
 
 func init() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
@@ -27,16 +28,16 @@ func init() {
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-var debug = flag.Bool("debug", false, "print debugging messages.")
-var ip = flag.String("ip", "10.0.1.235", "the address to the AMS router")
+var debug = flag.Bool("debug", true, "print debugging messages.")
+var ip = flag.String("ip", "10.0.3.0", "the address to the AMS router")
 
 // ip := flag.String("ip", "127.0.0.1", "the address to the AMS router")
-var netid = flag.String("netid", "10.0.2.15.1.1", "AMS NetID of the target")
+var netid = flag.String("netid", "5.42.254.12.1.1", "AMS NetID of the target")
 var port = flag.Int("port", 48898, "AMS Port of the target")
 
 // localNetid := flag.String("localNetId", "127.0.0.1.1.1", "AMS NetID of the target")
 var localNetid = flag.String("localNetId", "10.0.1.245.1.1", "AMS NetID of the target")
-var localPort = flag.Int("localPort", 10010, "AMS Port of the target")
+var localPort = flag.Int("localPort", 10500, "AMS Port of the target")
 
 func main() {
 	flag.Parse()
@@ -63,9 +64,9 @@ func main() {
 	fmt.Println(*debug, *ip, *netid, *port)
 
 	// Startup the connection
-
-	connection, err := ads.NewConnection(*ip, *netid, *port, *localNetid, *localPort)
-	connection.Connect(true)
+	ctx, cancel := context.WithCancel(context.Background())
+	connection, err := ads.NewConnection(ctx, *ip, *port, *netid, 851, *localNetid, *localPort)
+	connection.Connect(false)
 	defer connection.Close() // Close the connection when we are done
 	if err != nil {
 		log.Error().
@@ -76,12 +77,6 @@ func main() {
 
 	// Check what device are we connected to
 	data, err := connection.ReadState()
-	if err != nil {
-		log.Error().
-			Err(err).
-			Msg("error")
-		return
-	}
 	log.Info().
 		Interface("adsState", data).
 		Msg("Successfully conncected./test	")
@@ -117,12 +112,20 @@ func main() {
 	log.Info().
 		Interface("symbol", symbol).
 		Msg("Final Value")
-	value := connection.ReadFromSymbol("MAIN.I")
+	value, _ := connection.ReadFromSymbol("MAIN.I")
 	log.Info().
 		Interface("symbol", symbol).
 		Str("value", value).
 		Msg("Final Value")
-	connection.AddSymbolNotification("MAIN.I")
+	update := make(chan ads.Update)
+	go func() {
+		select {
+		case msg := <-update:
+			log.Info().Interface("blah", msg).Msg("")
+		}
+
+	}()
+	connection.AddSymbolNotification("MAIN.I", update)
 	time.Sleep(5000 * time.Millisecond)
 	connection.WriteToSymbol("MAIN.b", "Say wut3!")
 	log.Info().
@@ -132,4 +135,5 @@ func main() {
 	log.Info().
 		Interface("symbol", symbol).
 		Msg("Final Value")
+	cancel()
 }
