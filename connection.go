@@ -46,6 +46,8 @@ type requestResponse struct {
 // NewConnection blah blah blah
 func NewConnection(ctx context.Context, ip string, port int, netid string, amsPort int, localNetID string, localPort int) (conn *Connection, err error) {
 	conn = &Connection{ip: ip, port: port}
+	conn.ip = ip
+	conn.port = port
 	conn.target.NetID = stringToNetID(netid)
 	conn.target.Port = uint16(amsPort)
 	conn.source.NetID = stringToNetID(localNetID)
