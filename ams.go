@@ -91,7 +91,7 @@ func (conn *Connection) decode(in []byte) (command CommandID, length uint32, inv
 		Msgf("Starting decoding of AMS header %v\n\r", hex.Dump(in))
 
 	if len(in) < 32 {
-		err = fmt.Errorf("Not a full AMS header (to small, %d < 38byte)", len(in))
+		err = fmt.Errorf("not a full AMS header (to small, %d < 38byte)", len(in))
 		return
 	}
 	binBuf := bytes.NewBuffer(in)
@@ -108,7 +108,7 @@ func (conn *Connection) decode(in []byte) (command CommandID, length uint32, inv
 		Msgf("cmd: %d len: %d error: %d invoke: %d", command, length, error, invoke)
 
 	if header.ErrorCode > 0 {
-		err = fmt.Errorf("Got ADS error code: %v in AMS decode", header.ErrorCode)
+		err = fmt.Errorf("got ADS error code: %v in AMS decode", header.ErrorCode)
 		return
 	}
 
