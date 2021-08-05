@@ -132,7 +132,6 @@ func (conn *Connection) listen() <-chan []byte {
 						Msg("listen read error")
 					return
 				}
-				break
 			}
 			buff.Write(data)
 			err := binary.Read(&buff, binary.LittleEndian, &tcpHeader)
@@ -194,14 +193,12 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 				Err(err).
 				Msg("error")
 		}
-		break
 	default:
 		// Check if the response channel exists and is open
 		conn.activeRequestLock.Lock()
+		defer conn.activeRequestLock.Unlock()
 		if responseMap, ok := conn.activeRequests[header.Command]; ok {
 			if response, ok := responseMap.response[header.InvokeID]; ok {
-				ctx, cancel := context.WithCancel(ctx)
-				defer cancel()
 				// Try to send the response to the waiting request function
 				select {
 				case <-ctx.Done():
@@ -209,20 +206,13 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 						Uint32("id", header.InvokeID).
 						Interface("command", header.Command).
 						Msg("receive channel timed out")
-					conn.activeRequestLock.Unlock()
-					break
+					return
 				case response <- adsData:
 					log.Trace().
 						Uint32("id", header.InvokeID).
 						Interface("command", header.Command).
 						Msgf("Successfully deliverd answer")
 					break
-					// default:
-					// 	log.Trace().
-					// 		Uint32("id", header.InvokeID).
-					// 		Interface("command", header.Command).
-					// 		Msgf("unable to send to getter")
-					// 	break
 				}
 
 			} else {
