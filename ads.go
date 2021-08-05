@@ -65,8 +65,18 @@ func (conn *Connection) WriteToSymbol(symbolName string, value string) error {
 			Msg("error during write to symbol")
 		return err
 	}
-	conn.Write(uint32(GroupSymbolValueByHandle), symbol.Handle, data)
-	return nil
+	err = conn.Write(uint32(GroupSymbolValueByHandle), symbol.Handle, data)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("error during write to symbol")
+		return err
+	}
+	log.Trace().
+		Str("symbol", symbolName).
+		Str("Value", value).
+		Msg("wrote to symbol")
+	return err
 }
 
 func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
@@ -100,6 +110,10 @@ func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 			Msg("error during parse symbol")
 		return "", err
 	}
+	log.Trace().
+		Str("symbol", symbolName).
+		Str("Value", value).
+		Msg("Read from symbol")
 	symbol.LastUpdateTime = now
 	symbol.Value = value
 	return value, nil
@@ -162,7 +176,9 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 	if err != nil {
 		return err
 	}
-	log.Info().Int("handle", int(handle)).Msg("notification created")
+	log.Info().
+		Int("handle", int(handle)).
+		Msg("notification created")
 	update := conn.notificationHandler(symbolName, updateReceiver)
 	conn.activeNotificationLock.Lock()
 	defer conn.activeNotificationLock.Unlock()
