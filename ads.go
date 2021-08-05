@@ -197,7 +197,6 @@ func (conn *Connection) notificationHandler(symbolname string, updateReceiver ch
 	update := make(chan symbolUpdate)
 	conn.waitGroup.Add(1)
 	go func(update chan symbolUpdate) {
-		conn.waitGroup.Add(1)
 		defer conn.waitGroup.Done()
 		for {
 			ctx, cancel := context.WithCancel(conn.ctx)
