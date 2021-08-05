@@ -3,7 +3,6 @@ package ads
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -243,7 +242,7 @@ func decodeSymbolUploadDataType(data *bytes.Buffer, parent string) (header Symbo
 
 	if totalSize < 48 {
 		err = fmt.Errorf(parent, " - Wrong size < 48 byte")
-		fmt.Printf(hex.Dump(data.Bytes()))
+		log.Error().Err(err).Hex("data", data.Bytes()).Msg("error during binary read")
 	}
 
 	err = binary.Read(data, binary.LittleEndian, &result)
