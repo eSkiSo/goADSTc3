@@ -157,8 +157,8 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 		symbol.Handle,
 		symbol.Length,
 		TransModeServerOnChange,
-		30*time.Millisecond,
-		30*time.Millisecond)
+		40*time.Millisecond,
+		40*time.Millisecond)
 	if err != nil {
 		return err
 	}
