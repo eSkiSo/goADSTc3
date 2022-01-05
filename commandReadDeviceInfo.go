@@ -29,7 +29,7 @@ func (conn *Connection) ReadDeviceInfo() (response DeviceInfo, err error) {
 
 	// Check the response length
 	if len(resp) != 24 {
-		return response, fmt.Errorf(fmt.Sprintf("Wrong length of response! Got %d bytes and it should be 24", len(resp)))
+		return response, fmt.Errorf("wrong length of response! Got %d bytes and it should be 24", len(resp))
 	}
 	type readDeviceInfoResponse struct {
 		Error      ReturnCode
@@ -39,7 +39,7 @@ func (conn *Connection) ReadDeviceInfo() (response DeviceInfo, err error) {
 	deviceInfoResponse := readDeviceInfoResponse{}
 	binary.Read(respBuffer, binary.LittleEndian, deviceInfoResponse)
 	if deviceInfoResponse.Error > 0 {
-		err = fmt.Errorf("Got ADS error number %d in ReadDeviceInfo", deviceInfoResponse.Error)
+		err = fmt.Errorf("got ADS error number %d in ReadDeviceInfo", deviceInfoResponse.Error)
 		return
 	}
 

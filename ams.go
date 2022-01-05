@@ -3,8 +3,6 @@ package ads
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -25,11 +23,6 @@ type amsHeader struct {
 	Length    uint32
 	ErrorCode uint32
 	InvokeID  uint32
-}
-
-type amsHeaderWithData struct {
-	amsHeader
-	Data []byte
 }
 
 func stringToNetID(source string) (result [6]byte) {
@@ -67,7 +60,13 @@ func (conn *Connection) encode(command CommandID, data []byte, invokeID uint32) 
 
 	buff := &bytes.Buffer{}
 	err := binary.Write(buff, binary.LittleEndian, tcpHeader)
+	if err != nil {
+		return nil, err
+	}
 	err = binary.Write(buff, binary.LittleEndian, header)
+	if err != nil {
+		return nil, err
+	}
 	err = binary.Write(buff, binary.LittleEndian, data)
 	log.Trace().
 		Bytes("data", data).
@@ -84,33 +83,4 @@ func (conn *Connection) encode(command CommandID, data []byte, invokeID uint32) 
 		Msg("The encoded AMS header:")
 
 	return buff.Bytes(), nil
-}
-
-func (conn *Connection) decode(in []byte) (command CommandID, length uint32, invoke uint32, err error) {
-	log.Trace().
-		Msgf("Starting decoding of AMS header %v\n\r", hex.Dump(in))
-
-	if len(in) < 32 {
-		err = fmt.Errorf("not a full AMS header (to small, %d < 38byte)", len(in))
-		return
-	}
-	binBuf := bytes.NewBuffer(in)
-	header := amsHeader{}
-	binary.Read(binBuf, binary.LittleEndian, &header)
-	log.Info().
-		Interface("header", header).
-		Msg("header")
-	command = header.Command
-	length = header.Length
-	error := header.ErrorCode
-	invoke = header.InvokeID
-	log.Trace().
-		Msgf("cmd: %d len: %d error: %d invoke: %d", command, length, error, invoke)
-
-	if header.ErrorCode > 0 {
-		err = fmt.Errorf("got ADS error code: %v in AMS decode", header.ErrorCode)
-		return
-	}
-
-	return
 }

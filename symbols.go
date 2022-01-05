@@ -12,11 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type symbolUpdate struct {
-	timestamp time.Time
-	data      []byte
-}
-
 type datatypeEntry struct {
 	EntryLength   uint32
 	Version       uint32
@@ -76,21 +71,22 @@ type SymbolUploadInfo struct {
 }
 
 type Symbol struct {
-	FullName           string
-	LastUpdateTime     time.Time
-	MinUpdateInterval  time.Duration
-	Name               string
-	DataType           string
-	Comment            string
-	Handle             uint32
-	NotificationHandle uint32
-	Group              uint32
-	Offset             uint32
-	Length             uint32
-	Changed            bool
+	FullName          string
+	LastUpdateTime    time.Time
+	MinUpdateInterval time.Duration
+	Name              string
+	DataType          string
+	Comment           string
+	Handle            uint32
+	Group             uint32
+	Offset            uint32
+	Length            uint32
+	Changed           bool
 
 	Value string
 	Valid bool
+
+	Notification chan<- *Update
 
 	Parent *Symbol
 	Childs map[string]*Symbol
@@ -408,9 +404,9 @@ func (symbol *Symbol) parseSymbol(onlyChanged bool) (rData interface{}) {
 	return
 }
 
-func (symbol *Symbol) clearChanged() {
-	for _, localsymbol := range symbol.Childs {
-		localsymbol.clearChanged()
-	}
-	symbol.Changed = false
-}
+// func (symbol *Symbol) clearChanged() {
+// 	for _, localsymbol := range symbol.Childs {
+// 		localsymbol.clearChanged()
+// 	}
+// 	symbol.Changed = false
+// }

@@ -8,25 +8,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type readParams struct {
-	group  uint32
-	offset uint32
-	length uint32
-}
-
-type readResponse struct {
-	err  error
-	data []byte
-}
-
-func (conn *Connection) ReadGroup(params ...readParams) [][]byte {
-	returnedData := [][]byte{}
-	for index := range params {
-		returnedData[index] = []byte{}
-	}
-	return returnedData
-}
-
 func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data []byte, err error) {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
@@ -76,7 +57,7 @@ func (conn *Connection) Read(group uint32, offset uint32, length uint32) (data [
 		return
 	}
 	if response.Error > 0 {
-		err = fmt.Errorf("Got ADS error number %v in Read", response.Error)
+		err = fmt.Errorf("got ADS error number %v in Read", response.Error)
 		return
 	}
 	// data = make([]byte, response.Length)

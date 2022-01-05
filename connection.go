@@ -21,27 +21,27 @@ type Connection struct {
 	source      AmsAddress
 	sendChannel chan []byte
 
-	symbols map[string]*Symbol
+	symbols             map[string]*Symbol
+	activeNotifications map[uint32]*Symbol
+	symbolLock          sync.Mutex
 
-	datatypes   map[string]SymbolUploadDataType
-	ctx         context.Context
-	shutdown    context.CancelFunc
-	waitGroup   sync.WaitGroup
-	symbolLock  sync.Mutex
-	requestLock sync.Mutex
+	datatypes map[string]SymbolUploadDataType
+	ctx       context.Context
+	shutdown  context.CancelFunc
+	waitGroup sync.WaitGroup
 
 	// List of active requests that waits a response, invokeid is key and value is a channel to the request rutine
-	activeRequests         map[CommandID]*requestResponse
-	activeRequestLock      sync.Mutex
-	systemResponse         chan []byte
-	activeNotifications    map[uint32]chan symbolUpdate
-	activeNotificationLock sync.Mutex
+	currentRequest    atomic.Uint32
+	activeRequestLock sync.Mutex
+	activeRequests    map[uint32]chan []byte
+
+	systemResponse chan []byte
 }
 
-type requestResponse struct {
-	id       atomic.Uint32
-	response map[uint32]chan []byte
-}
+// type requestResponse struct {
+// 	id       atomic.Uint32
+// 	response map[uint32]chan []byte
+// }
 
 // NewConnection blah blah blah
 func NewConnection(ctx context.Context, ip string, port int, netid string, amsPort int, localNetID string, localPort int) (conn *Connection, err error) {
@@ -53,36 +53,15 @@ func NewConnection(ctx context.Context, ip string, port int, netid string, amsPo
 	conn.source.NetID = stringToNetID(localNetID)
 	conn.source.Port = uint16(localPort)
 	conn.systemResponse = make(chan []byte)
-	conn.activeRequests = map[CommandID]*requestResponse{}
-	for i := CommandID(0); i < 10; i++ {
-		conn.activeRequests[i] = &requestResponse{
-			response: map[uint32]chan []byte{},
-		}
-	}
-	conn.activeNotifications = map[uint32]chan symbolUpdate{}
+	conn.activeRequests = map[uint32]chan []byte{}
+	// for i := CommandID(0); i < 10; i++ {
+	// 	conn.activeRequests[i] = &requestResponse{
+	// 		response: map[uint32]chan []byte{},
+	// 	}
+	// }
+	conn.activeNotifications = make(map[uint32]*Symbol)
 	conn.sendChannel = make(chan []byte)
 	conn.ctx, conn.shutdown = context.WithCancel(ctx)
-	return
-}
-
-func (conn *Connection) dial() (err error) {
-	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
-	return err
-}
-
-func (conn *Connection) reconnect() {
-	var err error
-
-	conn.connection, err = net.Dial("tcp", fmt.Sprintf("%s:%d", conn.ip, conn.port))
-	if err != nil {
-		log.Error().
-			Err(err).
-			Msg("Error connecting")
-		return
-	}
-	log.Trace().
-		Msgf("Connected")
-
 	return
 }
 
@@ -107,7 +86,7 @@ func (conn *Connection) Connect(local bool) error {
 	go conn.listen()
 	go conn.transmitWorker()
 	if local {
-		resp, err := conn.send([]byte{0, 16, 2, 0, 0, 0, 0, 0})
+		resp, _ := conn.send([]byte{0, 16, 2, 0, 0, 0, 0, 0})
 		buf := bytes.NewBuffer(resp)
 		result := AmsAddress{}
 		log.Trace().
@@ -122,6 +101,11 @@ func (conn *Connection) Connect(local bool) error {
 		conn.source = result
 	}
 	res, err := conn.GetSymbolUploadInfo()
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msgf("ERROR %v", err)
+	}
 	datatypesResponse, err := conn.GetUploadSymbolInfoDataTypes(res.DataTypeLength)
 	if err != nil {
 		log.Error().

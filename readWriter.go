@@ -144,7 +144,7 @@ func (symbol *Symbol) parse(data []byte, offset int) (string, error) {
 
 			newValue = t.Truncate(time.Millisecond).Format("2006-01-02 15:04:05")
 		default:
-			return "", fmt.Errorf("Unknown format cannot parse")
+			return "", fmt.Errorf("unknown format cannot parse")
 		}
 	}
 	if strcmp(symbol.Value, newValue) != 0 &&
@@ -207,7 +207,7 @@ func (symbol *Symbol) writeToNode(value string, offset int, datatypes map[string
 		if stringArrayIncludes(parseableTypes, dtDt) {
 			dt = datatypes[dt].DataType
 		} else {
-			return nil, fmt.Errorf("Data type not parseable %v", dtDt)
+			return nil, fmt.Errorf("data type not parseable %v", dtDt)
 		}
 	}
 	switch dt {

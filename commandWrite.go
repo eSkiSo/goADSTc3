@@ -53,7 +53,7 @@ func (conn *Connection) Write(group uint32, offset uint32, data []byte) error {
 		log.Error().
 			Err(err).
 			Msg("error during write")
-		err = fmt.Errorf("Got ADS error number %v in Write", respCode)
+		err = fmt.Errorf("got ADS error number %v in Write", respCode)
 		return err
 	}
 

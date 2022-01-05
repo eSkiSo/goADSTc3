@@ -117,7 +117,7 @@ func main() {
 		Interface("symbol", symbol).
 		Str("value", value).
 		Msg("Final Value")
-	update := make(chan ads.Update)
+	update := make(chan *ads.Update)
 	go func() {
 		select {
 		case msg := <-update:

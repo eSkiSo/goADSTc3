@@ -2,7 +2,6 @@ package ads
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"fmt"
 	"time"
@@ -154,10 +153,8 @@ func (conn *Connection) GetUploadSymbolInfoDataTypes(length uint32) (data []byte
 	return data, nil
 }
 
-func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver chan Update) error {
+func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver chan *Update) error {
 	symbol, err := conn.GetSymbol(symbolName)
-	conn.symbolLock.Lock()
-	defer conn.symbolLock.Unlock()
 	if err != nil {
 		log.
 			Error().
@@ -166,23 +163,25 @@ func (conn *Connection) AddSymbolNotification(symbolName string, updateReceiver 
 			Msg("error getting symbol")
 		return err
 	}
+	fmt.Printf("%v\n", err)
 	handle, err := conn.AddDeviceNotification(
 		uint32(GroupSymbolValueByHandle),
 		symbol.Handle,
 		symbol.Length,
 		TransModeServerOnChange,
-		40*time.Millisecond,
-		40*time.Millisecond)
+		100*time.Millisecond,
+		100*time.Millisecond)
 	if err != nil {
 		return err
 	}
 	log.Info().
 		Int("handle", int(handle)).
+		Str("symbol", symbolName).
 		Msg("notification created")
-	update := conn.notificationHandler(symbolName, updateReceiver)
-	conn.activeNotificationLock.Lock()
-	defer conn.activeNotificationLock.Unlock()
-	conn.activeNotifications[handle] = update
+	conn.symbolLock.Lock()
+	defer conn.symbolLock.Unlock()
+	symbol.Notification = updateReceiver
+	conn.activeNotifications[handle] = symbol
 	return nil
 }
 
@@ -190,53 +189,4 @@ type Update struct {
 	Variable  string
 	Value     string
 	TimeStamp time.Time
-}
-
-/// Sample notification handler
-func (conn *Connection) notificationHandler(symbolname string, updateReceiver chan Update) chan symbolUpdate {
-	update := make(chan symbolUpdate)
-	conn.waitGroup.Add(1)
-	go func(update chan symbolUpdate) {
-		defer conn.waitGroup.Done()
-		for {
-			ctx, cancel := context.WithCancel(conn.ctx)
-			defer cancel()
-			select {
-			case <-ctx.Done():
-				log.Info().
-					Msgf("exited notification handler")
-				return
-			case receivedUpdate := <-update:
-				conn.symbolLock.Lock()
-				symbol := conn.symbols[symbolname]
-				value, err := symbol.parse(receivedUpdate.data, 0)
-				if err != nil {
-					log.Error().
-						Err(err).
-						Msg("error during parse of notification")
-					break
-				}
-				symbol.Value = value
-				conn.symbolLock.Unlock()
-				log.Trace().
-					Str("update", symbol.Value).
-					Msgf("update received")
-				update := Update{
-					Variable:  symbol.FullName,
-					Value:     value,
-					TimeStamp: receivedUpdate.timestamp,
-				}
-				receiveCTX, cancel := context.WithCancel(conn.ctx)
-				defer cancel()
-				select {
-				case <-receiveCTX.Done():
-					break
-				case updateReceiver <- update:
-					break
-				}
-
-			}
-		}
-	}(update)
-	return update
 }

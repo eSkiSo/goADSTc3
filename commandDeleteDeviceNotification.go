@@ -9,7 +9,7 @@ import (
 )
 
 // DeleteDeviceNotification does stuff
-func (conn *Connection) DeleteDeviceNotification(handle uint32) {
+func (conn *Connection) DeleteDeviceNotification(handle uint32) error {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
 	request := &bytes.Buffer{}
@@ -27,7 +27,7 @@ func (conn *Connection) DeleteDeviceNotification(handle uint32) {
 			Int("handle", int(handle)).
 			Err(err).
 			Msg("error deleting handle")
-		return
+		return err
 	}
 
 	// Check the result error code
@@ -39,12 +39,13 @@ func (conn *Connection) DeleteDeviceNotification(handle uint32) {
 			Int("handle", int(handle)).
 			Int("error", int(adsError)).
 			Msg("error deleting handle")
-		err = fmt.Errorf("Got ADS error number %d in DeleteDeviceNotification", adsError)
-		return
+		err = fmt.Errorf("got ADS error number %d in DeleteDeviceNotification", adsError)
+		return err
 	}
+	// close(conn.activeNotifications[handle])
 	delete(conn.activeNotifications, handle)
 	log.Info().
 		Int("handle", int(handle)).
 		Msg("deleting handle")
-	return
+	return nil
 }
