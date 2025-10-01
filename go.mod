@@ -1,4 +1,4 @@
-module gitlab.com/xilix-systems-llc/go-native-ads/v4
+module github.com/eSkiSo/goADSTc3
 
 go 1.13
 
