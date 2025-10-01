@@ -121,7 +121,7 @@ func (conn *Connection) ReadFromSymbol(symbolName string) (string, error) {
 func (conn *Connection) GetSymbolUploadInfo() (uploadInfo SymbolUploadInfo, err error) {
 	res, err := conn.Read(uint32(GroupSymbolUploadInfo2), 0, 24) //UploadSymbolInfo;
 	if err != nil {
-		log.Fatal().
+		log.Error().
 			Err(err).
 			Msg("Bad Bad Bad")
 		return
@@ -134,7 +134,7 @@ func (conn *Connection) GetSymbolUploadInfo() (uploadInfo SymbolUploadInfo, err 
 func (conn *Connection) GetUploadSymbolInfoSymbols(length uint32) (data []byte, err error) {
 	res, err := conn.Read(uint32(GroupSymbolUpload), 0, length) //UploadSymbolInfo;
 	if err != nil {
-		log.Fatal().
+		log.Error().
 			Err(err).
 			Msg("Bad Bad Bad")
 		return nil, err
