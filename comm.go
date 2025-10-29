@@ -16,7 +16,7 @@ import (
 func (conn *Connection) send(data []byte) (response []byte, err error) {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
-	conn.currentRequest.Inc()
+
 	ctx, cancel := context.WithCancel(conn.ctx)
 	defer cancel()
 	select {
@@ -30,12 +30,12 @@ func (conn *Connection) send(data []byte) (response []byte, err error) {
 	select {
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("request aborted, deadline exceeded %w", ctx.Err())
+			err = fmt.Errorf("Request aborted, deadline exceeded %w", ctx.Err())
 			log.Error().
 				Err(err).
 				Msg("sendRequest aborted due to timeout")
 		} else {
-			err = fmt.Errorf("request aborted, shutdown initiated %w", ctx.Err())
+			err = fmt.Errorf("Request aborted, shutdown initiated %w", ctx.Err())
 			log.Error().
 				Err(err).
 				Msg("sendRequest aborted due to shutdown")
@@ -55,10 +55,11 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 		return
 	}
 	conn.activeRequestLock.Lock()
+	responseMap := conn.activeRequests[command]
 	// First, request a new invoke id
-	id := conn.currentRequest.Inc()
+	id := responseMap.id.Inc()
 	// Create a channel for the response
-	conn.activeRequests[id] = make(chan []byte)
+	responseMap.response[id] = make(chan []byte)
 	conn.activeRequestLock.Unlock()
 	log.Trace().
 		Interface("command", command).
@@ -73,7 +74,8 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 			Msg("Error during sendrequest encode")
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(conn.ctx, 4000*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(conn.ctx)
 	defer cancel()
 	select {
 	case <-ctx.Done():
@@ -84,9 +86,12 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 			log.Info().
 				Msg("sendRequest aborted due to shutdown")
 		}
-		return
+		return nil, ctx.Err()
 	case conn.sendChannel <- pack:
+		break
 	}
+	ctx, cancel = context.WithTimeout(conn.ctx, 1000*time.Millisecond)
+	defer cancel()
 	select {
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -97,7 +102,7 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 				Msg("sendRequest aborted due to shutdown")
 		}
 		return nil, ctx.Err()
-	case response = <-conn.activeRequests[id]:
+	case response = <-responseMap.response[id]:
 		return response, nil
 	}
 }
@@ -105,25 +110,24 @@ func (conn *Connection) sendRequest(command CommandID, data []byte) (response []
 func (conn *Connection) listen() <-chan []byte {
 	c := make(chan []byte)
 	go func() {
-		defer close(c)
 		reader := bufio.NewReader(conn.connection)
 		buff := bytes.Buffer{}
 		for {
 			tcpHeader := amsTCPHeader{}
-			data := make([]byte, 6)
+			data := make([]byte, binary.Size(tcpHeader))
+			ctx, cancel := context.WithCancel(conn.ctx)
+			defer cancel()
 			select {
-			case <-conn.ctx.Done():
+			case <-ctx.Done():
 				log.Info().
 					Msgf("exit listen")
 				return
 			default:
 				_, err := io.ReadFull(reader, data)
 				if err != nil {
-					log.Info().
-						Err(err).
-						Msg("listen read error")
-					return
+					continue
 				}
+				break
 			}
 			buff.Write(data)
 			err := binary.Read(&buff, binary.LittleEndian, &tcpHeader)
@@ -134,22 +138,18 @@ func (conn *Connection) listen() <-chan []byte {
 				continue
 			}
 			data = make([]byte, tcpHeader.Length)
+			ctx, cancel = context.WithCancel(conn.ctx)
+			defer cancel()
 			select {
-			case <-conn.ctx.Done():
+			case <-ctx.Done():
 				return
 			default:
-				_, err := io.ReadFull(reader, data)
-				if err != nil {
-					log.Info().
-						Err(err).
-						Msg("listen read error")
-					return
-				}
+				io.ReadFull(reader, data)
 			}
 			if tcpHeader.System > 0 {
 				conn.systemResponse <- data
 			} else {
-				go conn.handleReceive(conn.ctx, data)
+				go conn.handleReceive(ctx, data)
 			}
 		}
 	}()
@@ -159,11 +159,6 @@ func (conn *Connection) listen() <-chan []byte {
 func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 	log.Trace().
 		Msg("in read")
-	if len(data) < 32 {
-		log.Error().
-			Msg("header to short")
-		return
-	}
 	buff := bytes.NewBuffer(data)
 	header := amsHeader{}
 	err := binary.Read(buff, binary.LittleEndian, &header)
@@ -186,7 +181,6 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 			Msg("Error parsing body")
 		return
 	}
-
 	switch header.Command {
 	case CommandIDDeviceNotification:
 		err := conn.DeviceNotification(ctx, adsData)
@@ -195,26 +189,58 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 				Err(err).
 				Msg("error")
 		}
+		break
+	case CommandIDReadState:
+		type readStateResponse struct {
+			Error ReturnCode
+			states
+		}
+		stateResponse := &readStateResponse{}
+		buff := bytes.NewBuffer(adsData)
+		err := binary.Read(buff, binary.LittleEndian, stateResponse)
+		if err != nil {
+			return
+		}
+		log.Info().
+			Interface("AdsState", stateResponse.AdsState).
+			Interface("DeviceState", stateResponse.DeviceState).
+			Msg("response.ADSState")
+		break
 	default:
-		log.Trace().
-			Msg("default receive")
 		// Check if the response channel exists and is open
 		conn.activeRequestLock.Lock()
-		defer conn.activeRequestLock.Unlock()
-		if response, ok := conn.activeRequests[header.InvokeID]; ok {
-			// Try to send the response to the waiting request function
-			select {
-			case <-ctx.Done():
-				log.Info().
-					Uint32("id", header.InvokeID).
-					Interface("command", header.Command).
-					Msg("receive channel timed out")
-				return
-			case response <- adsData:
-				log.Trace().
-					Uint32("id", header.InvokeID).
-					Interface("command", header.Command).
-					Msgf("Successfully deliverd answer")
+		if responseMap, ok := conn.activeRequests[header.Command]; ok {
+			if response, ok := responseMap.response[header.InvokeID]; ok {
+				ctx, cancel := context.WithCancel(ctx)
+				defer cancel()
+				// Try to send the response to the waiting request function
+				select {
+				case <-ctx.Done():
+					log.Info().
+						Uint32("id", header.InvokeID).
+						Interface("command", header.Command).
+						Msg("receive channel timed out")
+					conn.activeRequestLock.Unlock()
+					break
+				case response <- adsData:
+					log.Trace().
+						Uint32("id", header.InvokeID).
+						Interface("command", header.Command).
+						Msgf("Successfully deliverd answer")
+					break
+					// default:
+					// 	log.Trace().
+					// 		Uint32("id", header.InvokeID).
+					// 		Interface("command", header.Command).
+					// 		Msgf("unable to send to getter")
+					// 	break
+				}
+
+			} else {
+				log.Error().
+					Bytes("data", buff.Bytes()).
+					Uint32("invokeId", header.InvokeID).
+					Msg("Got broadcast, invoke: ")
 			}
 
 		} else {
@@ -223,7 +249,114 @@ func (conn *Connection) handleReceive(ctx context.Context, data []byte) {
 				Uint32("invokeId", header.InvokeID).
 				Msg("Got broadcast, invoke: ")
 		}
+		conn.activeRequestLock.Unlock()
+	}
 
+}
+func (conn *Connection) receiveWorker() {
+	conn.waitGroup.Add(1)
+	defer conn.waitGroup.Done()
+	read := conn.listen()
+	for {
+		ctx, cancel := context.WithCancel(conn.ctx)
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			log.Debug().
+				Msg("Exit receiveWorker")
+			return
+		case data := <-read:
+			log.Trace().
+				Msg("in read")
+			buff := bytes.NewBuffer(data)
+			header := amsHeader{}
+			err := binary.Read(buff, binary.LittleEndian, &header)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("Error parsing header")
+				conn.requestLock.Unlock()
+				break
+			}
+			log.Trace().
+				Interface("header", header).
+				Msg("header info")
+			adsData := make([]byte, header.Length)
+			err = binary.Read(buff, binary.LittleEndian, &adsData)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Msg("Error parsing body")
+				break
+			}
+			switch header.Command {
+			case CommandIDDeviceNotification:
+				err := conn.DeviceNotification(ctx, adsData)
+				if err != nil {
+					log.Error().
+						Err(err).
+						Msg("error")
+				}
+				break
+			case CommandIDReadState:
+				type readStateResponse struct {
+					Error ReturnCode
+					states
+				}
+				stateResponse := &readStateResponse{}
+				buff := bytes.NewBuffer(adsData)
+				err := binary.Read(buff, binary.LittleEndian, stateResponse)
+				if err != nil {
+					break
+				}
+				log.Info().
+					Interface("AdsState", stateResponse.AdsState).
+					Interface("DeviceState", stateResponse.DeviceState).
+					Msg("response.ADSState")
+				break
+			default:
+				// Check if the response channel exists and is open
+				// conn.activeRequestLock.Lock()
+				if responseMap, ok := conn.activeRequests[header.Command]; ok {
+					if response, ok := responseMap.response[header.InvokeID]; ok {
+						ctx, cancel := context.WithCancel(ctx)
+						defer cancel()
+						// Try to send the response to the waiting request function
+						select {
+						case <-ctx.Done():
+							log.Info().
+								Uint32("id", header.InvokeID).
+								Interface("command", header.Command).
+								Msg("receive channel timed out")
+							break
+						case response <- adsData:
+							log.Trace().
+								Uint32("id", header.InvokeID).
+								Interface("command", header.Command).
+								Msgf("Successfully deliverd answer")
+							break
+						default:
+							log.Trace().
+								Uint32("id", header.InvokeID).
+								Interface("command", header.Command).
+								Msgf("unable to send to getter")
+							break
+						}
+
+					} else {
+						log.Error().
+							Bytes("data", buff.Bytes()).
+							Uint32("invokeId", header.InvokeID).
+							Msg("Got broadcast, invoke: ")
+					}
+				} else {
+					log.Error().
+						Bytes("data", buff.Bytes()).
+						Uint32("invokeId", header.InvokeID).
+						Msg("Got broadcast, invoke: ")
+				}
+			}
+		}
 	}
 }
 
@@ -231,9 +364,9 @@ func (conn *Connection) transmitWorker() {
 	conn.waitGroup.Add(1)
 	defer conn.waitGroup.Done()
 	writer := bufio.NewWriter(conn.connection)
-	ctx, cancel := context.WithCancel(conn.ctx)
-	defer cancel()
 	for {
+		ctx, cancel := context.WithCancel(conn.ctx)
+		defer cancel()
 		select {
 		case <-ctx.Done():
 			log.Debug().
@@ -252,4 +385,5 @@ func (conn *Connection) transmitWorker() {
 			writer.Flush()
 		}
 	}
+
 }
